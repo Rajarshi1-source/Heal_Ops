@@ -1,0 +1,100 @@
+image:
+  repository: ghcr.io/OWNER/healops-chaos
+  # Pinned by CI to the git SHA. Never `latest`.
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# Fault services. `name` doubles as the SERVICE selector and as the runbook's chaos_fixture value.
+services:
+  crashyApi:
+    enabled: true
+    name: crashy-api
+    replicas: 3
+    env:
+      # Unset by default so the deployment starts healthy. `make demo` sets it, which creates a
+      # bad revision on top of a good one -- exactly what `rollout undo` needs to be a real fix.
+      CRASH_AFTER: ""
+    resources:
+      requests: { cpu: 20m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 64Mi }
+
+  hungryWorker:
+    enabled: true
+    name: hungry-worker
+    replicas: 1
+    env:
+      TARGET_MIB: "384"
+      GROWTH_MIB_PER_SEC: "16"
+      START_DELAY_S: "15"
+    resources:
+      requests: { cpu: 20m, memory: 128Mi }
+      # Below TARGET_MIB, so it is OOM-killed. Raising this limit to ~512Mi genuinely fixes it,
+      # which is what makes the in-place resize verifiable rather than cosmetic.
+      limits: { cpu: 100m, memory: 256Mi }
+    # In-place resize needs the memory resizePolicy to allow it. RestartContainer here would make
+    # the runbook refuse -- which is itself a fixture, see refusalFixtures.oomRestartPolicy.
+    resizePolicy:
+      - resourceName: memory
+        restartPolicy: NotRequired
+      - resourceName: cpu
+        restartPolicy: NotRequired
+
+  cpuBurner:
+    enabled: true
+    name: cpu-burner
+    replicas: 2
+    env:
+      BURN_ON_START: "false"
+      BURN_WORKERS: "2"
+      BURN_SECONDS: "900"
+    resources:
+      requests: { cpu: 50m, memory: 32Mi }
+      limits: { cpu: 200m, memory: 64Mi }
+
+  logSpammer:
+    enabled: true
+    name: log-spammer
+    replicas: 1
+    env:
+      RATE_MIB_PER_MIN: "64"
+      MAX_TOTAL_MIB: "2048"
+      SEED_OLD_FILES: "12"
+      LOG_DIR: /var/log/chaos
+    resources:
+      requests: { cpu: 20m, memory: 32Mi }
+      limits: { cpu: 200m, memory: 64Mi }
+    volume:
+      # emptyDir lands on the node filesystem, so filling it moves the same signal the
+      # NodeDiskPressure rule reads.
+      sizeLimit: 3Gi
+
+# Workloads that exist so HealOps can be proven to REFUSE them. A remediation engine that never
+# refuses is a liability, and refusal recall is graded at 100% in the decision eval.
+refusalFixtures:
+  # 1. StatefulSet -- policy denies stateful workloads outright.
+  statefulSet:
+    enabled: true
+    name: chaos-state
+    replicas: 1
+
+  # 2. Single replica -- no safe blast radius for a disruptive fix.
+  singleReplica:
+    enabled: true
+    name: lonely-api
+    replicas: 1
+
+  # 3. Explicit opt-out annotation -- the workload-level kill switch.
+  optOut:
+    enabled: true
+    name: hands-off-api
+    replicas: 2
+
+  # 4. Memory resizePolicy RestartContainer -- an "in-place" bump here would restart the
+  #    container, so claiming "no restart" would be a lie. The runbook must refuse.
+  oomRestartPolicy:
+    enabled: true
+    name: restart-on-resize
+    replicas: 1
+
+nodeSelector: {}
+tolerations: []

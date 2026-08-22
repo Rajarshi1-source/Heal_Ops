@@ -1,0 +1,98 @@
+[project]
+name = "healops"
+version = "0.1.0"
+description = "HealOps - self-healing Kubernetes infrastructure with automated remediation runbooks"
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "MIT" }
+
+# Everything is pinned exactly and bumped by Renovate; nothing floats. The plan's §B states
+# floors (FastAPI 0.128.x, slack-bolt 1.28.x) that the index has since moved past - these pins
+# are the current releases of those same lines, which is what "pin exactly, stay current" means.
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.52.4",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.15.0",
+    "sqlalchemy[asyncio]==2.0.52",
+    "asyncpg==0.31.0",
+    "alembic==1.19.1",
+    "redis==8.1.0",
+    # Client major tracks the cluster minor: 36.x <-> Kubernetes 1.36.
+    "kubernetes==36.0.3",
+    "slack-bolt==1.30.0",
+    "slack-sdk==3.43.0",
+    "boto3==1.43.78",
+    "httpx==0.28.1",
+    "cel-python==0.5.0",
+    "pyyaml==6.0.3",
+    "prometheus-client==0.26.0",
+    "structlog==26.1.0",
+    "tenacity==9.1.4",
+    "typer==0.27.1",
+    "rich==15.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "pytest-cov==7.1.0",
+    "respx==0.23.1",
+    "ruff==0.16.4",
+    "mypy==2.3.1",
+    "types-PyYAML==6.0.12.20260815",
+]
+
+# The repo is a workspace of three importable roots (engine/src, evals, cli), not a
+# distributable library, so uv manages the environment without building a wheel.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["engine/tests", "evals/tests"]
+pythonpath = ["engine/src", "."]
+asyncio_mode = "auto"
+markers = [
+    "chaos: requires a live kind cluster with real fault injection (excluded from the unit gate)",
+    "db: requires a live PostgreSQL 18 (CI provides one as a service container)",
+]
+
+[tool.coverage.run]
+source = ["engine/src"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+# Ruff formats Python code blocks embedded in Markdown. The plan and the skills are prose
+# specifications, not source -- reformatting them would rewrite the documents this project is
+# built from, and would invalidate quoted snippets.
+extend-exclude = ["dashboard", ".venv", "*.md", ".claude", ".cursor"]
+# Roots that count as first-party for import sorting; `engine/src` is on PYTHONPATH.
+src = ["engine/src", "."]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "C4", "SIM", "RET"]
+ignore = [
+    "S101",  # assert is how the unit and chaos suites express contracts
+    "B008",  # FastAPI Depends() in argument defaults is the documented idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+"engine/tests/*" = ["S105", "S106"]
+"evals/*" = ["S105", "S106"]
+
+[tool.mypy]
+python_version = "3.14"
+mypy_path = "engine/src"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["celpy.*", "kubernetes.*", "slack_bolt.*", "slack_sdk.*", "boto3.*", "botocore.*"]
+ignore_missing_imports = true

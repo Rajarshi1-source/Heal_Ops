@@ -1,0 +1,103 @@
+---
+description: HealOps MLOps wrapper - promotion ladder (shadow to approval to auto), was-this-correct feedback, calibrated confidence, chaos-generated corpus, decision eval gating CI, LLM narrator boundary
+globs: evals/**,engine/src/promotion.py,engine/src/narrative.py,engine/src/confidence.py,corpus/**
+alwaysApply: false
+---
+
+# HealOps MLOps Wrapper — Promotion and Calibration
+
+Full skill: `.claude/skills/healops-mlops-promotion/SKILL.md`
+
+The central claim to defend: the decision layer is **deliberately deterministic** — a rules engine,
+not a model — but it gets the **full MLOps treatment**, and that contrast is the point.
+
+## The ladder
+
+Every `(runbook, namespace)` pair sits on three rungs and climbs or falls on evidence.
+
+```
+SHADOW      produces plans for real incidents but CANNOT act; plans are diffed against the human action
+  | promote when: >= 10 shadow plans AND >= 90% match the human action AND zero policy-deny plans
+  v
+APPROVAL    acts only after a human clicks Approve in Slack
+  | promote when: >= 20 consecutive good outcomes in this namespace
+  v
+AUTO        acts within policy, no human in the loop
+  demote when ANY of: verification failed and compensation ran / a human answered "No" /
+                      the masking guard tripped / the runbook's code or policy changed
+```
+
+```python
+SHADOW_MIN_PLANS = 10
+SHADOW_MIN_AGREEMENT = 0.90
+APPROVAL_MIN_CONSECUTIVE_GOOD = 20
+```
+
+### Design properties to preserve
+
+- **Demotion is instant and one-strike.** Promotion takes twenty; demotion takes one. That asymmetry
+  is the safety property.
+- **Authority is per-namespace.** A runbook can be fully automatic in `shop` and still approval-only
+  in `payments`.
+- **Any code or policy change resets to approval.** Promotion of the *software* is
+  `git push -> CI -> Helm`; promotion of the *automation authority* is this ladder. Two different
+  pipelines, deliberately.
+- **The policy gate reads promotion state.** The `approve-not-promoted` rule
+  (`promotion.mode != "auto"` -> require approval) is how the ladder becomes enforcement rather than
+  bookkeeping.
+- **Every transition is a ledger entry.**
+
+### "Was this correct?" must do something
+
+The answer must feed `on_outcome`, and a `No` must demote — otherwise the button is theatre and an
+interviewer will notice. Logging the answer without acting on it is a survey, not a feedback loop.
+
+Shadow plans are recorded in `runbook_executions` with `mode='shadow'` and no execution. The
+**agreement rate** between shadow plans and human actions is exported to Prometheus — that is the
+drift monitor.
+
+## Calibrated confidence
+
+Every plan carries a `confidence`. That number is worthless unless it is **measured**, so grade it the
+way a forecast is graded. CI gates:
+
+- Top-1 accuracy >= 0.90 — the chosen runbook matches the labelled correct action
+- **Brier score <= 0.08** — confidence numbers track reality
+- **Expected Calibration Error <= 0.10** — when it says 0.9, it's right about 90% of the time
+- Determinism digest — exact match; same incident bundle -> byte-identical plan
+- Refusal recall — **100%** of must-refuse cases, graded at 100% rather than as an average
+
+Two properties that make this real rather than decorative:
+
+1. **`planner.plan_for(bundle)` must be a pure function of the bundle.** If planning reaches out to a
+   live cluster, the eval can't be hermetic, the digest can't be stable, and the gate becomes flaky.
+   Keep cluster reads behind the target object that the bundle carries.
+2. **The determinism digest is a frozen artefact keyed by `PLANNER_VERSION`.** When a deliberate logic
+   change moves the digests, the reviewer updates the frozen set *in the same PR* — which makes every
+   decision-affecting change visible in review.
+
+## The corpus is generated, not hand-written
+
+The chaos harness drives a `kind` cluster, induces each fault, captures the alert payloads plus
+cluster state as a bundle, and labels it with the correct action.
+
+- Target **at least 25 cases** across the five runbooks.
+- Include **at least four must-refuse cases**: a StatefulSet OOMKill, a single-replica CrashLoop, a
+  node alert during a planned drain (freeze active), and an alert on an annotated opt-out workload.
+- Commit the bundles as JSON. Hermetic corpus, no cluster in CI for this gate.
+
+**A remediation engine that never refuses is a liability.**
+
+## The optional LLM layer and its hard boundary
+
+1. **`TemplateNarrator` is the default.** The system works with no API key and no network.
+2. **Provider-agnostic adapter, model id from config.** Never hardcode a vendor or model at the call site.
+3. **Grounding check is not optional:** if the draft references an action absent from the ledger,
+   discard it. A hallucinated postmortem is worse than a templated one.
+4. The narrator **never produces or alters a plan, a policy decision, or a verdict.**
+
+## Build-order note
+
+Ship **the ladder before the calibration gate**. The intermediate position is the corpus plus the
+accuracy gate, leaving Brier and ECE for later. Do not ship the corpus without the accuracy gate: an
+ungated corpus is a folder of JSON nobody trusts.

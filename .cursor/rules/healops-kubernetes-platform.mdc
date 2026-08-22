@@ -1,0 +1,109 @@
+---
+description: HealOps cluster platform - Prometheus rules, Alertmanager config, RBAC, Helm 4 charts, kind, chaos app, docker-compose, GitHub Actions CI gates, Grafana dashboards, deployment strategy
+globs: charts/**,k8s/**,.github/**,chaos-app/**,monitoring/**,docker-compose.yml,Makefile
+alwaysApply: false
+---
+
+# HealOps Kubernetes Platform
+
+Full skill: `.claude/skills/healops-kubernetes-platform/SKILL.md`
+
+Everything outside the engine: how alerts are produced, how HealOps gets permission to act, how it
+ships, and how CI proves it works.
+
+## Pin every tag — including the ones that are easy to forget
+
+Never `latest`. When touching `docker-compose.yml` or `charts/healops/values.yaml`, check for and fix:
+
+- `minio/minio:latest` -> a pinned release tag
+- `grafana/grafana:latest` -> `grafana/grafana:13.0.x`
+- `engine.image.tag: latest` and `dashboard.image.tag: latest` -> the git SHA that CI pushes
+- The obsolete top-level `version: '3.8'` key in Compose — Compose v2 ignores it and warns
+- With `valkey/valkey:9-alpine`, use `valkey-server` / `valkey-cli` in `command:` and `healthcheck:`
+
+A document that mandates pinning while shipping `:latest` is the first thing a sharp reviewer notices.
+
+## Three Helm 4 migration gotchas
+
+1. **Server-side apply is the default for new installs**, so expect explicit conflict errors instead
+   of silent overwrites — exactly what you want when Argo CD also touches these objects.
+2. **`--wait` needs the `watch` RBAC verb** in the CI service account's role. Missing it breaks CI silently.
+3. **`--post-renderer` must now be a plugin.**
+
+## RBAC — least privilege, justify every verb
+
+`k8s/rbac/healops-clusterrole.yaml` grants only what the five runbooks need:
+
+- `deployments`, `deployments/scale`: get, list, watch, patch, update — rollback (1), scale-up (3)
+- `replicasets`: get, list — revision history for rollback
+- `pods`: get, list, watch, delete — state capture, restart paths
+- `pods/resize`: patch — in-place memory bump (4)
+- `pods/log`, `pods/eviction`: get / create — evidence capture; drain (5)
+- `nodes`: get, list, watch, patch — cordon and uncordon (5)
+- `horizontalpodautoscalers`: get, list, patch — HPA-aware scale-up (3)
+- `events`: create — Kubernetes-native audit alongside the ledger
+- `coordination.k8s.io/leases`: get, create, update — leader election
+
+What is **deliberately absent** is the interview answer: no `delete` on `persistentvolumeclaims`, no
+`secrets` read beyond its own namespace, no cluster-admin, no wildcard verbs.
+
+HealOps' own namespace carries `healops.io/remediation: disabled`.
+
+## Prometheus rules and Alertmanager
+
+Five rules in `charts/alerting-rules/templates/prometheusrule.yaml` matching the five runbooks:
+`KubePodCrashLooping`, `NodeDiskPressure`, `HighPodCPU`, `KubePodOOMKilled`, `KubeNodeNotReady`.
+
+- Use the **dimensionless throttle ratio**, not raw throttled-period counters.
+- Use `container_oom_events_total` (a counter), not the flapping `last_terminated_reason` gauge.
+
+Alertmanager config (`k8s/prometheus/alertmanager-config.yaml`):
+
+- Webhook receiver targets `http://healops-engine:8000/api/webhooks/alertmanager` with a shared secret.
+- **`inhibit_rules` are the first line of storm defence** — a `KubeNodeNotReady` on a node inhibits
+  `KubePodCrashLooping` for pods on it. Engine-side correlation is the second line, because inhibition
+  cannot express owner-reference topology.
+- **Enable UTF-8 strict mode.**
+- **Run HA mode** (3-replica gossip cluster). Cross-replica dedup means the webhook must be idempotent.
+
+## The chaos app
+
+One fault per alert type. Each service name is the `chaos_fixture` value on the runbook that answers
+it — that string is the contract enforced in CI, so keep the names in sync.
+
+- `crashy-api` — CrashLoopBackOff via env `CRASH_AFTER=30s` -> `KubePodCrashLooping`
+- `hungry-worker` — allocates until killed -> `KubePodOOMKilled`
+- `cpu-burner` — tight loop on demand -> `HighPodCPU`
+- `log-spammer` — writes 1 GB/min to `/var/log` -> `NodeDiskPressure`
+- `flaky-node` — node taint injection -> `KubeNodeNotReady`
+
+The harness has a second job: it **generates the labelled incident corpus** for the decision eval by
+capturing alert payloads plus cluster state as JSON bundles. **Build the capture path when you build
+the injectors**; retrofitting it is tedious.
+
+## CI pipeline — the gates that can fail a merge
+
+Separate gate jobs so a failure names its own cause:
+
+- `unit` — `pytest -m "not chaos" --cov=engine --cov-fail-under=80`
+- `decision-gate` — `python -m evals.decision_eval` and `python -m evals.ledger_verify`
+- `policy-gate` — `python -m evals.policy_eval`
+- `chaos` — real kind cluster (`kindest/node:v1.36.x`), pinned chart version,
+  `pytest -m chaos --runbook=all`; on failure, `kubectl cluster-info dump`
+- `build-sign-deploy` — **needs all four**; buildx push, cosign sign, `helm upgrade --install --wait --atomic`
+
+The chaos job is the slowest, so keep the unit and eval gates fast and independent.
+
+## Deployment
+
+- local: `kind` 1.36 + chaos app, all runbooks `shadow`
+- staging: `approval` everywhere — where runbooks earn promotion evidence
+- prod (demo): `auto` for runbooks 1-3 in `shop`, `approval` elsewhere
+
+How HealOps itself deploys: rolling update with `maxUnavailable: 0`, `maxSurge: 1`, readiness on
+`/healthz`; `helm upgrade --install --atomic --wait`; on `SIGTERM` stop consuming new stream messages,
+finish in-flight execution, let the Lease expire, `terminationGracePeriodSeconds: 60`; migrations are
+**expand-contract**, forward-only via Alembic.
+
+**Never expose an endpoint that can trigger remediation from the public internet.** The public demo is
+read-only; the only write path to the cluster is inside the cluster.

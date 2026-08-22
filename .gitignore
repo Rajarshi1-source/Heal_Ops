@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# uv
+uv.lock.bak
+
+# Node / Next.js
+node_modules/
+dashboard/.next/
+dashboard/out/
+dashboard/.turbo/
+*.tsbuildinfo
+
+# Secrets and local config - never commit these
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+kubeconfig
+charts/healops/values-secret.yaml
+
+# Local artefacts
+/tmp/
+*.log
+cluster-dump/
+
+# Evidence bundles are content-addressed and archived to object storage, not to git.
+# The committed corpus under corpus/ is deliberately tracked - it is the eval dataset.
+bundles/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

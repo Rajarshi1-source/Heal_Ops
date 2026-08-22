@@ -1,0 +1,93 @@
+---
+description: HealOps global mandates - version pins, safety invariants, and the remediation pipeline. Applies to all work in this repository.
+alwaysApply: true
+---
+
+# HealOps — Core Rules
+
+HealOps is a self-healing Kubernetes platform: Prometheus alerts trigger remediation runbooks that
+plan, get gated by policy, execute, then **verify recovery and revert themselves when it failed**.
+
+The authoritative specification is `HealOps_Implementation_Plan_Rev2.md`. Seven detailed skills live
+in `.claude/skills/<name>/SKILL.md` and are mirrored as glob-scoped rules in `.cursor/rules/`.
+
+## The pipeline — memorise this order
+
+```
+alert -> correlate -> PLAN -> policy gate -> [shadow | approval | execute] -> VERIFY -> compensate?
+```
+
+When unsure where code belongs, ask which stage it serves. Every branch is audited, **including the
+branches that do nothing** (refusals, denials, shadow records).
+
+## Non-negotiable invariants
+
+1. **Success means the incident is over.** Not that the Kubernetes API returned 200. A `rollout undo`
+   onto an equally broken revision is a **failure** and is recorded as one.
+2. **A runbook that cannot describe its own undo is not registered.** `compensate()` is abstract.
+3. **Compensation is persisted before the action runs**, never derived afterwards.
+4. **Refusals and denials are outcomes worth auditing.** "The system correctly decided not to act" is
+   a data point the efficacy scorecard needs. Never model them as errors.
+5. **The auto-vs-approval split is computed from plan properties by policy**, never hardcoded per runbook.
+6. **A missing signal is never a healthy signal.** Unavailable metrics produce `inconclusive` and escalate.
+7. **The ledger append happens in the same transaction as the state change it records.** No ledger
+   write means no action — the ledger is a precondition, not a side effect.
+8. **Authorisation fails closed.** `can_execute()` returns `False` on any unreadable approval state.
+9. **HealOps never remediates HealOps.** Its own namespace carries `healops.io/remediation: disabled`,
+   and that rule lives in the policy file, not in code.
+
+## Version pins — non-negotiable, never use `latest`
+
+- **Kubernetes 1.36** for the demo (`kindest/node:v1.36.x`), **1.35 is the hard floor** — in-place pod
+  resize went GA in 1.35 and that is the floor's entire reason. 1.35+ requires **cgroup v2**.
+- **Python 3.14** (`python:3.14-slim`, non-root), `requires-python = ">=3.14"`.
+- **FastAPI 0.128.x** with `uvicorn[standard]`.
+- **PostgreSQL 18.6** (`postgres:18.6-alpine`) — `uuidv7()` and temporal constraints are load-bearing.
+  PostgreSQL 19 is beta; never ship it.
+- **Valkey 9.1** (`valkey/valkey:9-alpine`) or Redis 8.x. Streams are the queue. In a Valkey image use
+  `valkey-server` / `valkey-cli`, not `redis-server` / `redis-cli`.
+- **Alertmanager 0.33.1** — **API v1 was removed in 0.27, so v2 only**. UTF-8 matcher parser is default.
+- **Prometheus 3.x**, installed via `kube-prometheus-stack` at an explicit pinned chart version (~88.x).
+- **Grafana 13.0.x**, dashboards provisioned as JSON in-repo.
+- **Helm 4.2.x** — server-side apply is default for new installs, `--wait` needs the `watch` RBAC verb,
+  and `--post-renderer` must be a plugin.
+- **Node 24 LTS**, **Next.js 16.3.x** App Router, TypeScript strict.
+- **slack-bolt 1.28.x** using `AsyncApp` mounted on FastAPI — one web server, one port.
+- **boto3 pinned exactly**; MinIO for local S3.
+- **Kubernetes Python client**: pin the minor matching the cluster minor; the typed client lags new
+  subresources, so reach `pods/resize` through the generic `call_api` path.
+
+> Sections §9.1 and §10 of `HealOps_Implementation_Plan_Rev2.md` still contain Rev 1 code blocks with
+> stale pins (`version: '3.8'`, Python 3.12, Node 20, `minio/minio:latest`, `grafana/grafana:latest`,
+> `image.tag: latest`, `redis-server` against a Valkey image). **The skills supersede those blocks.**
+
+## Architectural boundaries
+
+- The **engine** ingests and persists. It never decides whether an action is allowed.
+- The **safety pipeline** decides. Keeping that boundary is what makes the decision layer
+  unit-testable without a cluster.
+- The **decision layer is deterministic rules, never a model**, so it can be unit-tested, replayed and
+  hashed. Any LLM writes prose only and never alters a plan, a policy decision, or a verdict.
+- `planner.plan_for(bundle)` must be a **pure function of the bundle** — no live cluster reads, or the
+  CI decision gate cannot be hermetic and the determinism digest cannot be stable.
+
+## Consistency rules that are easy to get wrong
+
+1. One transaction per state transition, with the ledger append inside it.
+2. Optimistic concurrency on Kubernetes writes via `resourceVersion` preconditions. On conflict,
+   **re-plan** — never retry blindly.
+3. Monotonic incident state machine:
+   `open -> planning -> awaiting_approval -> executing -> verifying -> {remediated | reverted | escalated}`.
+   Illegal transitions raise, and the raise is itself a ledger entry.
+4. `compensate()` must be idempotent — both the verifier and the watchdog may call it.
+
+## Testing
+
+`pytest -m "not chaos" --cov=engine --cov-fail-under=80` is a merge gate. Unit tests use committed
+fixtures and need no cluster. Cluster-dependent behaviour is marked `@pytest.mark.chaos`.
+
+## Code style
+
+Comments explain non-obvious intent, trade-offs, or constraints the code cannot convey. Several
+interview-framing comments are deliberate and specified by the skills — preserve those. Do not add
+comments that narrate what the next line does.

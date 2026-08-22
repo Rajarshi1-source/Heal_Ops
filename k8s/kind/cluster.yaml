@@ -1,0 +1,55 @@
+# Kubernetes 1.36 - one control plane plus three workers.
+#
+# Three workers is not arbitrary: runbook 5 (cordon + drain) needs somewhere to drain TO, and its
+# capacity precheck refuses when remaining allocatable is under 120% of drained requests. With a
+# single worker that runbook could only ever refuse, so the chaos test would prove nothing.
+#
+# 1.35+ requires cgroup v2, which is also what makes the OOM and PSI signals trustworthy.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: healops
+
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # Dashboard / engine ingress
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+      # Prometheus
+      - containerPort: 30090
+        hostPort: 9090
+        protocol: TCP
+      # Alertmanager - the engine's verifier queries this via API v2
+      - containerPort: 30093
+        hostPort: 9093
+        protocol: TCP
+
+  - role: worker
+    labels:
+      healops.io/pool: general
+  - role: worker
+    labels:
+      healops.io/pool: general
+  - role: worker
+    labels:
+      healops.io/pool: general
+
+featureGates:
+  # GA in 1.35 and on by default; stated explicitly so the demo's dependency is visible.
+  InPlacePodVerticalScaling: true
+
+kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        # PSI metrics: beta in 1.34, GA in 1.36. The verifier uses them to answer
+        # "did the workload actually recover?" with pressure, not just alert state.
+        feature-gates: "KubeletPSI=true"

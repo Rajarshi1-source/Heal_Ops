@@ -1,0 +1,47 @@
+{{- range $key, $svc := .Values.services }}
+{{- if $svc.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svc.name }}
+  labels:
+    {{- include "chaos.labels" (dict "name" $svc.name "root" $) | nindent 4 }}
+  annotations:
+    # Recorded so `rollout undo` has a revision history to walk back through.
+    healops.io/chaos-fixture: {{ $svc.name | quote }}
+spec:
+  replicas: {{ $svc.replicas }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: {{ $svc.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "chaos.labels" (dict "name" $svc.name "root" $) | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      {{- with $.Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        fsGroup: 10002
+      containers:
+        {{- include "chaos.container" (dict "svc" $svc "root" $) | nindent 8 }}
+      {{- if $svc.volume }}
+      volumes:
+        - name: logs
+          emptyDir:
+            sizeLimit: {{ $svc.volume.sizeLimit }}
+      {{- end }}
+{{- end }}
+{{- end }}

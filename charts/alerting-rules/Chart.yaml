@@ -1,0 +1,12 @@
+apiVersion: v2
+name: alerting-rules
+description: >-
+  Prometheus alert rules that trigger HealOps runbooks, plus the recording rules the closed-loop
+  verifier evaluates. One alert per runbook; the alertname is the registry key.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - healops
+  - prometheus
+  - alerting

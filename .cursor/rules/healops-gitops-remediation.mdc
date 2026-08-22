@@ -1,0 +1,91 @@
+---
+description: HealOps GitOps-aware remediation - Argo CD/Flux classification, ephemeral vs durable fixes, TTLs and expiry, durable fixes as pull requests, in-place pod resize
+globs: engine/src/gitops.py,engine/src/runbooks/oom_memory_bump.py,engine/src/integrations/github_client.py,engine/src/k8s/resize.py
+alwaysApply: false
+---
+
+# HealOps GitOps-Aware Remediation and In-Place Resize
+
+Full skill: `.claude/skills/healops-gitops-remediation/SKILL.md`
+
+Two features, one philosophy: **mitigate automatically, fix durably through review.**
+
+```
+Stage 1 (seconds, ephemeral, auto):  in-place resize / rollback / scale -> incident stops
+Stage 2 (minutes, durable, human):   PR changing the manifest, carrying the evidence that
+                                     stage 1 actually worked
+```
+
+## The problem nobody handles
+
+`kubectl rollout undo` on an Argo CD-managed workload gets **re-applied from git** within the sync
+interval. `kubectl scale` reverts to the replica count in git. Any imperative change marks the app
+**OutOfSync**, so your remediation shows as a compliance violation on someone's dashboard.
+
+The framing that matters: these are not different use cases, they are **two controllers with write
+access to the same object.**
+
+## Classification
+
+`engine/src/gitops.py` classifies a target as `argocd`, `flux`, or `unmanaged` from labels and
+annotations, then chooses how the fix reaches the cluster:
+
+- **unmanaged** -> still TTL it. An untracked permanent change is how clusters drift from their
+  manifests, GitOps or not.
+- **managed + ephemeral** -> pause reconciliation for exactly the TTL, mark `gitops_managed`.
+- **managed + durable** -> the cluster is not the source of truth. Git is.
+
+## Pausing reconciliation for exactly the mitigation window
+
+- **Argo CD:** a sync window, or `selfHeal=false`, or a **temporary `ignoreDifferences` entry for the
+  specific field changed**. Prefer the narrowest option that works — a field-scoped
+  `ignoreDifferences` beats disabling self-heal for the whole app.
+- **Flux:** `flux suspend ks <name>` for the window.
+- **Always:** record the pause in the ledger with the reason and the TTL, and **resume it from the
+  watchdog** rather than from the request path. A pause that depends on the process that set it
+  surviving is not a pause.
+
+## Expiry is a first-class state
+
+Every ephemeral fix carries `expires_at`. On expiry the watchdog removes the imperative change,
+**resumes GitOps reconciliation**, and posts to Slack. This is why `ttl_seconds` is required when
+`durability == EPHEMERAL`. Automation that quietly leaves permanent hand-edits in a cluster is worse
+than no automation.
+
+## Durable fixes are pull requests
+
+Called **AFTER** verification proves the ephemeral mitigation worked. **Never open the PR before
+verification passes** — a PR proposing a change that didn't work is worse than no PR.
+
+The PR body is the differentiator, not the PR: incident timeline, before/after signals, ledger hash,
+revert command, and the line *"this change was already validated live for 42 minutes under real
+traffic before this PR was opened."*
+
+Credentials: a **fine-grained GitHub PAT scoped to contents plus pull requests on one repository**.
+
+## In-place pod resize (GA in Kubernetes 1.35)
+
+`MEMORY_BUMP_FACTOR = 1.5`, `MEMORY_CEILING_MIB = 4096`. The plan's action and compensation are both
+`resize` calls with `subresource="resize"`, differing only in the memory value — which is what makes
+the compensation exact rather than approximate.
+
+### Five details that make this credible under questioning
+
+1. **Mutation goes through the `resize` subresource**, not the pod spec.
+2. **Success is asserted on `status.containerStatuses[].resources`**, never on the HTTP 200. This is
+   the whole verification philosophy in miniature.
+3. **`PodResizePending` with reason `Infeasible` ends the attempt immediately** — the node cannot
+   satisfy it, so waiting is pointless. Fall back to the template plan **with approval**.
+4. **`resizePolicy: RestartContainer` for memory is a refusal**, because otherwise "no restart" is a lie.
+5. **The typed Python client may not expose the subresource** — call it through the generic `call_api`
+   path and pin the client minor to the cluster minor.
+
+Below cluster 1.35, fall back to the legacy restart-based template plan, which requires approval.
+
+## Chaos coverage
+
+- **Fix:** in-place resize applied, no restart observed (`restartCount` unchanged), OOM counter flat.
+- **Compensation:** resize back -> `status.containerStatuses[].resources` byte-identical to snapshot.
+- **Refusal:** `resizePolicy: RestartContainer`, ceiling reached, and a cluster below 1.35.
+- **GitOps:** an Argo CD-managed target produces an ephemeral plan with a TTL and a pause call;
+  expiry restores the declared state and resumes reconciliation.

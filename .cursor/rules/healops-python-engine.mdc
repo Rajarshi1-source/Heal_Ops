@@ -1,0 +1,88 @@
+---
+description: HealOps Python engine - FastAPI webhook receiver, correlation, persistence, queues, locks, leader election, Slack wiring
+globs: engine/**
+alwaysApply: false
+---
+
+# HealOps Python Engine
+
+Full skill: `.claude/skills/healops-python-engine/SKILL.md`
+Data model, REST surface and resilience table: `.claude/skills/healops-python-engine/references/data-model-and-endpoints.md`
+
+The engine is the **ingestion and persistence half** of HealOps. It receives alerts, turns them into
+incidents, persists everything, and hands work to the safety pipeline. **It never decides whether an
+action is allowed** — that is `healops-remediation-safety`.
+
+## Layout
+
+```
+engine/src/
+├── main.py                 # FastAPI entrypoint; mounts the Slack AsyncApp adapter
+├── config.py               # env-var config, no literals scattered in modules
+├── api/                    # webhooks.py  approvals.py  health.py  runbooks.py
+├── core/                   # alert_classifier  runbook_registry  runbook_executor
+│                           # approval_manager  deduplicator  incident_correlator
+├── runbooks/               # base.py + the five runbooks
+├── k8s/                    # client  deployment_ops  pod_ops  node_ops  state_capture
+├── integrations/           # slack_client  slack_messages  s3_client  prometheus_client
+├── db/                     # connection (async engine)  models  queries
+└── cache/                  # redis_client  dedup_store  approval_store
+```
+
+## The webhook path
+
+Alertmanager must never block on HealOps. The receiver does the minimum and returns **202**.
+
+- **Durable-then-ack.** Persist to PostgreSQL *before* adding to the stream, and `XACK` only after the
+  ledger write lands. Alertmanager retries on non-2xx, so a lost alert is worse than a duplicated one.
+- **Idempotency key is `(fingerprint, runbook, incident_id)`.** Alertmanager runs an HA gossip cluster
+  whose own dedup can still deliver twice; be idempotent rather than assume it won't.
+- **Parse the v2 shape only.** Store the complete payload verbatim in a `JSONB` column.
+- Verify the shared secret with a **constant-time compare**.
+
+## Correlation happens at ingestion, not at execution
+
+One node failure must produce **one** incident, not forty. `core/incident_correlator.py` implements
+topology-and-causality grouping; its rules are owned by `healops-remediation-safety`. Symptom alerts
+attach to the cause incident as **evidence** and never select their own runbook.
+
+## Queue, locks, leadership
+
+- **Queue:** Redis Streams with consumer groups. **Separate consumer groups for `exec` and `verify`**
+  so a slow verification backlog cannot block new incident handling (bulkhead).
+- **Locks:** `SET NX lock:{kind}:{ns}/{name}`, TTL 120 s, **fenced by plan id**.
+- **Leadership:** two engine replicas, but only one *acts*. A `coordination.k8s.io/Lease` grants
+  leadership; the follower still serves webhooks and enqueues.
+- **DLQ:** `remediation-jobs-dlq` after max retries, with an alert on depth.
+
+Valkey/Redis is **disposable**: if wiped, HealOps loses in-flight queue position and cold caches. It
+does not lose approvals, plans, executions, or the audit chain.
+
+## Approval state lives in PostgreSQL, never only in Redis
+
+`approvals` is the source of truth with `status`, an authoritative `expires_at` timestamp,
+`decided_by`, `decided_at`, and `slack_message_ts`. Redis is a read-through cache and a notifier.
+`can_execute()` **fails closed**. A TTL that deletes the row destroys the evidence and leaves the
+executor unable to distinguish "expired" from "lost". Timeout is 10 minutes and expiry **escalates**;
+it never auto-executes.
+
+## Resilience wiring
+
+- Timeouts everywhere: 8 s Kubernetes calls, 60 s resize wait, 10 min approval, 15 min verification.
+- Retry with exponential backoff **and full jitter** on transient errors only — **never** on a
+  mutation that may have partially applied.
+- Transport circuit breakers on the K8s API, Slack, S3 and Alertmanager clients, each with a fallback.
+- Graceful degradation: no Prometheus -> verification is `inconclusive` and escalates; no Slack ->
+  engine still acts within policy; no S3 -> the disk runbook **refuses** rather than deleting.
+- Fail-closed on PostgreSQL: no ledger write means no action.
+
+## Slack
+
+`AsyncApp` mounted on the FastAPI app via the adapter. `integrations/slack_messages.py` holds Block
+Kit builders and nothing else, so message shape is unit-testable without a Slack client. When Slack is
+down, actions requiring approval are **held, not executed**.
+
+## Testing
+
+Test the receiver against real captured v2 payloads, not hand-written dicts. Test dedup, lock fencing,
+approval fail-closed, and the state machine's illegal transitions.

@@ -1,0 +1,28 @@
+# The label kube-prometheus-stack's Prometheus uses to discover PrometheusRule objects.
+# `ruleSelectorNilUsesHelmValues: false` in the stack values means any namespace is picked up.
+release: kps
+
+# Namespaces the rules watch. HealOps' own namespace is deliberately excluded here as well as in
+# the Alertmanager route and the policy file -- three layers, because a self-remediation loop is
+# the one failure that can eat the incident it was handling.
+excludedNamespaces: "kube-system|kube-public|kube-node-lease|monitoring|healops"
+
+thresholds:
+  # CPU usage as a fraction of the container's limit.
+  highPodCpuRatio: 0.8
+  highPodCpuFor: 5m
+
+  # Filesystem used fraction that stands in for disk pressure.
+  diskUsedRatio: 0.85
+  diskPressureFor: 2m
+
+  crashLoopFor: 2m
+  oomWindow: 10m
+  nodeNotReadyFor: 3m
+
+# The shared secret Alertmanager presents on the webhook. Override in a values file that is not
+# committed, or let the HealOps chart create the secret and set `create: false` here.
+webhookSecret:
+  create: true
+  name: healops-webhook
+  token: "change-me"

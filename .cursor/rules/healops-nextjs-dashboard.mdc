@@ -1,0 +1,109 @@
+---
+description: HealOps Next.js 16.3 audit dashboard - App Router, Server Components, incident timeline state trail, KPI cards, JsonDiff, StatusBadge, read-only public build
+globs: dashboard/**
+alwaysApply: false
+---
+
+# HealOps Audit Dashboard
+
+Full skill: `.claude/skills/healops-nextjs-dashboard/SKILL.md`
+
+The dashboard's job is to make a claim checkable: *the system fixed three of five incidents
+automatically, and here is the evidence for each one.* Every design decision serves that.
+
+Node 24 LTS, Next.js 16.3.x App Router (no Pages Router), TypeScript strict, Tailwind + shadcn/ui.
+**shadcn/ui components are copied into `components/ui` and edited there, never an npm dependency.**
+
+## Layout
+
+```
+dashboard/src/
+├── app/
+│   ├── layout.tsx                    # dark theme root, nav
+│   ├── page.tsx                      # main incident timeline
+│   ├── incidents/[id]/page.tsx       # incident detail
+│   ├── runbooks/page.tsx             # catalog + stats + promotion state
+│   ├── approvals/page.tsx            # pending approvals
+│   └── api/                          # incidents  executions  stats  health
+├── components/
+│   ├── timeline/                     # IncidentTimeline  TimelineEvent  ExecutionDetail
+│   ├── dashboard/                    # KPICards  RunbookSuccessChart
+│   │                                 # IncidentFrequency  ApprovalPending
+│   ├── common/                       # StatusBadge  JsonDiff  LoadingSkeleton
+│   └── ui/                           # shadcn/ui, COPIED IN and edited here
+├── hooks/                            # useIncidents  useExecutions  useStats
+└── types/index.ts
+```
+
+## Server-first, and where that breaks
+
+Default to Server Components. Reach for `'use client'` only for genuine interactivity: the live
+incident feed, `JsonDiff` expand/collapse state, timeline filters, approval buttons, anything holding
+`useState`.
+
+Route Handlers under `app/api/` **proxy the engine** rather than talking to PostgreSQL directly. That
+keeps one query layer, one set of types, and means the public deployment can point at a read-only
+seeded API with no cluster credentials anywhere in the front end.
+
+Add `generateMetadata` on the incident detail route so a shared link previews as the incident it is.
+
+## The incident timeline is the centrepiece
+
+Render the pipeline as a **horizontal state trail**, because that trail *is* the differentiator made
+visible:
+
+```
+correlate -> plan -> policy -> [shadow|approval] -> execute -> verify -> {remediated|reverted|escalated}
+```
+
+Design for the stages that do nothing:
+
+- **Refused** — the runbook declined, with the reason. A first-class outcome, not an error state.
+- **Denied** — policy blocked it, with the rule id and message that fired.
+- **Shadow** — "would have done X", visually distinct from anything that acted.
+- **Reverted** — verification failed and compensation ran. Make it **legible rather than alarming**:
+  it is the system catching its own mistake.
+
+Symptom alerts nest under the cause with the correlation reason, never as separate rows — the whole
+point of correlation is that forty alerts are one incident.
+
+## KPI cards
+
+Mirror the efficacy scorecard with honest denominators visible on hover or in a caption. Auto-resolution
+rate excludes human-approved fixes. **False-remediation rate is a single big number, green at zero** —
+the trust metric. MTTR auto vs escalated side by side.
+
+**Do not style escalation or refusal as failures.** A red "escalation rate" card would contradict the
+project's entire thesis.
+
+## Components worth getting right
+
+- **`JsonDiff`** renders `state_before` vs `state_after`. Highlight only changed paths, collapse
+  unchanged subtrees by default, make changed lines copyable. This is how a reviewer confirms a
+  compensation restored state exactly.
+- **`StatusBadge`** covers the full vocabulary — `REMEDIATED`, `NOT_RECOVERED`, `INCONCLUSIVE`,
+  `REVERTED`, `REVERT_FAILED`, `ESCALATED`, `REFUSED`, `DENIED`, `SHADOW`, `PENDING`. Drive it from a
+  **discriminated union** so a new outcome is a compile error, not a silently grey badge.
+- **`ApprovalPending`** shows the plan summary, blast radius, cost delta, expected recovery signal, and
+  the countdown to `expires_at`. **Read the deadline from the API** — PostgreSQL is the source of
+  truth, so never compute expiry client-side from a duration.
+- **Runbook catalog** lists triggers, reversibility class, chaos fixture, and promotion mode per
+  namespace. This is the model card rendered as UI.
+
+## Styling
+
+Dark-first. Theme through **semantic tokens in CSS variables**, never hardcoded colours — the outcome
+vocabulary needs consistent semantics across badges, timeline nodes and charts, and that only holds if
+there is one source of colour truth. Preserve Radix accessibility primitives: keyboard navigation on
+the timeline, focus management in the approval dialog, `aria-live` on the incident feed.
+
+## States that actually happen
+
+Build all four for every data view: **Loading** (skeleton matching the final layout), **Empty** ("no
+incidents yet" is the *normal* state of a healthy cluster — make it say how to trigger the demo),
+**Error** (degrade to cached data with a staleness note, never a blank page), **Stale** (show the age).
+
+## Read-only in public, always
+
+Approval buttons must be **absent or disabled** in the public build, not merely unwired. Gate write
+affordances behind a build-time flag so the read-only build cannot render them at all.

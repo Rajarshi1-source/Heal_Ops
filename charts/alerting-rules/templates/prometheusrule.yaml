@@ -1,0 +1,276 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: healops-runbook-alerts
+  labels:
+    release: {{ .Values.release }}
+    app.kubernetes.io/part-of: healops
+spec:
+  groups:
+    # ---------------------------------------------------------------------------------------------
+    # Recording rules. The verifier evaluates these same expressions when it decides whether a
+    # workload actually recovered, so they live next to the alerts rather than in the engine as
+    # duplicated PromQL strings that can drift.
+    # ---------------------------------------------------------------------------------------------
+    - name: healops.recording
+      interval: 15s
+      rules:
+        # Throttle RATIO -- dimensionless. Raw throttled-period counters move with replica count
+        # and window length, which makes a raw comparison meaningless.
+        - record: healops:container_cpu_throttle_ratio:rate5m
+          expr: |
+            sum by (namespace, pod, container) (
+              rate(container_cpu_cfs_throttled_periods_total{container!="", container!="POD"}[5m])
+            )
+            /
+            clamp_min(
+              sum by (namespace, pod, container) (
+                rate(container_cpu_cfs_periods_total{container!="", container!="POD"}[5m])
+              ),
+              1e-9
+            )
+
+        # CPU usage as a fraction of the configured limit.
+        - record: healops:container_cpu_usage_ratio:rate5m
+          expr: |
+            sum by (namespace, pod, container) (
+              rate(container_cpu_usage_seconds_total{container!="", container!="POD"}[5m])
+            )
+            /
+            clamp_min(
+              sum by (namespace, pod, container) (
+                kube_pod_container_resource_limits{resource="cpu"}
+              ),
+              1e-9
+            )
+
+        - record: healops:container_memory_usage_ratio:current
+          expr: |
+            sum by (namespace, pod, container) (
+              container_memory_working_set_bytes{container!="", container!="POD"}
+            )
+            /
+            clamp_min(
+              sum by (namespace, pod, container) (
+                kube_pod_container_resource_limits{resource="memory"}
+              ),
+              1e-9
+            )
+
+        # OOM by COUNTER, not the flapping last_terminated_reason gauge.
+        - record: healops:container_oom_events:increase10m
+          expr: |
+            sum by (namespace, pod, container) (
+              increase(container_oom_events_total{container!=""}[10m])
+            )
+
+        # PSI: share of wall time fully stalled on memory. Beta in 1.34, GA in 1.36.
+        # `or vector(0)`-style fallbacks are deliberately absent: a missing PSI series must read as
+        # absent so the verifier can return `inconclusive` rather than treating it as healthy.
+        - record: healops:container_memory_psi_full:rate5m
+          expr: |
+            sum by (namespace, pod, container) (
+              rate(container_pressure_memory_stalled_seconds_total[5m])
+            )
+
+    # ---------------------------------------------------------------------------------------------
+    # One alert per runbook. `alertname` is the registry key the classifier matches on, and
+    # `healops_runbook` is carried for humans reading the Alertmanager UI -- the engine never
+    # trusts it, because a label is not an authorisation.
+    # ---------------------------------------------------------------------------------------------
+    - name: healops.runbooks
+      rules:
+        # --- Runbook 1: CrashLoop rollback ------------------------------------------------------
+        - alert: KubePodCrashLooping
+          # The `node` label is joined in, not incidental: Alertmanager's inhibit_rules match on it,
+          # and the engine's correlator needs it to attach this symptom to a node-level cause.
+          # The join must be inside the parentheses -- `*` binds tighter than `>`, so
+          # `A > 0 * B` would silently evaluate as `A > 0` and drop the label.
+          expr: |
+            (
+              max by (namespace, pod, container) (
+                kube_pod_container_status_waiting_reason{
+                  reason="CrashLoopBackOff",
+                  namespace!~"{{ .Values.excludedNamespaces }}"
+                }
+              )
+              * on (namespace, pod) group_left(node)
+              max by (namespace, pod, node) (kube_pod_info)
+            ) > 0
+          for: {{ .Values.thresholds.crashLoopFor }}
+          labels:
+            severity: critical
+            healops_runbook: crashloop_rollback
+          annotations:
+            summary: "Pod {{ `{{ $labels.namespace }}` }}/{{ `{{ $labels.pod }}` }} is crash looping"
+            description: >-
+              Container {{ `{{ $labels.container }}` }} in {{ `{{ $labels.namespace }}` }}/{{ `{{ $labels.pod }}` }}
+              on node {{ `{{ $labels.node }}` }} has been in CrashLoopBackOff for
+              {{ .Values.thresholds.crashLoopFor }}.
+            runbook_url: "https://github.com/OWNER/healops/blob/main/RUNBOOKS.md#crashloop_rollback"
+
+        # --- Runbook 2: Disk cleanup ------------------------------------------------------------
+        # Two independent signals: the kubelet's own DiskPressure condition, and a filesystem
+        # utilisation ratio. The condition is authoritative but lags; the ratio is what the
+        # log-spammer chaos fixture actually moves.
+        - alert: NodeDiskPressure
+          # node-exporter series carry a `node` label because kube-prometheus-stack's ServiceMonitor
+          # relabels __meta_kubernetes_pod_node_name onto them, so no join is needed here.
+          expr: |
+            (
+              max by (node) (
+                kube_node_status_condition{condition="DiskPressure", status="true"}
+              ) > 0
+            )
+            or
+            (
+              max by (node) (
+                1 - (
+                  node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|ramfs", mountpoint="/"}
+                  /
+                  clamp_min(
+                    node_filesystem_size_bytes{fstype!~"tmpfs|overlay|ramfs", mountpoint="/"},
+                    1
+                  )
+                )
+              ) > {{ .Values.thresholds.diskUsedRatio }}
+            )
+          for: {{ .Values.thresholds.diskPressureFor }}
+          labels:
+            severity: warning
+            healops_runbook: disk_cleanup
+          annotations:
+            summary: "Node {{ `{{ $labels.node }}` }} is under disk pressure"
+            description: >-
+              Root filesystem on {{ `{{ $labels.node }}` }} is above
+              {{ .Values.thresholds.diskUsedRatio }} utilisation, or the kubelet has set the
+              DiskPressure condition.
+            runbook_url: "https://github.com/OWNER/healops/blob/main/RUNBOOKS.md#disk_cleanup"
+
+        # --- Runbook 3: CPU scale-up ------------------------------------------------------------
+        - alert: HighPodCPU
+          expr: |
+            (
+              healops:container_cpu_usage_ratio:rate5m{
+                namespace!~"{{ .Values.excludedNamespaces }}"
+              }
+              * on (namespace, pod) group_left(node)
+              max by (namespace, pod, node) (kube_pod_info)
+            ) > {{ .Values.thresholds.highPodCpuRatio }}
+          for: {{ .Values.thresholds.highPodCpuFor }}
+          labels:
+            severity: warning
+            healops_runbook: cpu_scale_up
+          annotations:
+            summary: "High CPU on {{ `{{ $labels.namespace }}` }}/{{ `{{ $labels.pod }}` }}"
+            description: >-
+              Container {{ `{{ $labels.container }}` }} in {{ `{{ $labels.namespace }}` }}/{{ `{{ $labels.pod }}` }}
+              has used more than {{ .Values.thresholds.highPodCpuRatio }} of its CPU limit for
+              {{ .Values.thresholds.highPodCpuFor }} (currently
+              {{ `{{ $value | humanizePercentage }}` }}). The runbook checks whether an HPA owns
+              this workload before touching replicas.
+            runbook_url: "https://github.com/OWNER/healops/blob/main/RUNBOOKS.md#cpu_scale_up"
+
+        # --- Runbook 4: OOM memory bump ---------------------------------------------------------
+        - alert: KubePodOOMKilled
+          expr: |
+            (
+              healops:container_oom_events:increase10m{
+                namespace!~"{{ .Values.excludedNamespaces }}"
+              }
+              * on (namespace, pod) group_left(node)
+              max by (namespace, pod, node) (kube_pod_info)
+            ) > 0
+          for: 0m
+          labels:
+            severity: critical
+            healops_runbook: oom_memory_bump
+          annotations:
+            summary: "Container {{ `{{ $labels.container }}` }} was OOM killed"
+            description: >-
+              {{ `{{ $labels.namespace }}` }}/{{ `{{ $labels.pod }}` }} container
+              {{ `{{ $labels.container }}` }} recorded an OOM event in the last
+              {{ .Values.thresholds.oomWindow }}. Counted from container_oom_events_total, not from
+              the flapping last_terminated_reason gauge.
+            runbook_url: "https://github.com/OWNER/healops/blob/main/RUNBOOKS.md#oom_memory_bump"
+
+        # --- Runbook 5: Node cordon + drain -----------------------------------------------------
+        # This is the cause alert in the storm scenario: it has CAUSE_PRECEDENCE 0, so the pod-level
+        # symptoms on the same node attach to its incident as evidence instead of triggering
+        # forty rollbacks.
+        - alert: KubeNodeNotReady
+          expr: |
+            max by (node) (
+              kube_node_status_condition{condition="Ready", status="true"}
+            ) == 0
+          for: {{ .Values.thresholds.nodeNotReadyFor }}
+          labels:
+            severity: critical
+            healops_runbook: node_drain
+          annotations:
+            summary: "Node {{ `{{ $labels.node }}` }} has been NotReady for {{ .Values.thresholds.nodeNotReadyFor }}"
+            description: >-
+              The Ready condition on {{ `{{ $labels.node }}` }} has been false for
+              {{ .Values.thresholds.nodeNotReadyFor }}. Pod-level alerts on this node are symptoms
+              and are inhibited in Alertmanager, then correlated as evidence in the engine.
+            runbook_url: "https://github.com/OWNER/healops/blob/main/RUNBOOKS.md#node_drain"
+
+    # ---------------------------------------------------------------------------------------------
+    # HealOps monitoring itself. Self-monitoring is a first-class feature, not an afterthought:
+    # automation you cannot observe is automation you cannot trust.
+    # ---------------------------------------------------------------------------------------------
+    - name: healops.self
+      rules:
+        - alert: HealOpsLedgerChainInvalid
+          expr: healops_ledger_valid == 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The HealOps audit chain failed verification"
+            description: >-
+              healops_ledger_valid is 0. A tamper-evidence mechanism nobody checks is decoration;
+              this is the check. Run `healopsctl audit --verify-chain` to find the broken sequence.
+
+        - alert: HealOpsWatchdogActing
+          expr: increase(healops_watchdog_actions_total[15m]) > 0
+          for: 0m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The HealOps watchdog force-reverted a remediation"
+            description: >-
+              The watchdog only acts when a verification never completed, which means the engine
+              died mid-remediation or a verification hung. Investigate before the next incident.
+
+        - alert: HealOpsBreakerOpen
+          expr: healops_breaker_state > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "HealOps automation is halted ({{ `{{ $labels.scope }}` }})"
+            description: >-
+              The remediation circuit breaker is open or half-open. Automation has stopped and a
+              human should be looking at the cluster.
+
+        - alert: HealOpsBudgetExhausted
+          expr: healops_budget_used_ratio >= 1
+          for: 0m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Remediation budget exhausted in {{ `{{ $labels.namespace }}` }}"
+            description: >-
+              If HealOps needs to act more than its hourly budget allows, the cluster has a
+              systemic problem and a human should be looking at it. Further plans escalate
+              rather than queue.
+
+        - alert: HealOpsDLQNotEmpty
+          expr: healops_dlq_depth > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Remediation jobs are in the dead-letter queue"
+            description: "Silent message loss is the failure this queue exists to prevent."

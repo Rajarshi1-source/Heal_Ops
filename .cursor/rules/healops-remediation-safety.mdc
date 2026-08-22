@@ -1,0 +1,135 @@
+---
+description: HealOps safety pipeline - RemediationPlan, blast radius, CEL policy gate, runbook contract, orchestrator, closed-loop verification, compensation, budget, breaker, anti-masking guard
+globs: engine/src/runbooks/**,engine/src/plan.py,engine/src/orchestrator.py,engine/src/verifier.py,engine/src/compensator.py,engine/src/watchdog.py,engine/src/policy.py,engine/src/budget.py,engine/src/recurrence.py,policy/**
+alwaysApply: false
+---
+
+# HealOps Remediation Safety Pipeline
+
+Full skill: `.claude/skills/healops-remediation-safety/SKILL.md`
+
+Every existing auto-remediation tool is `trigger -> action`. HealOps inserts the stages that change
+the whole safety story:
+
+```
+alert -> correlate -> PLAN -> policy gate -> [shadow | approval | execute] -> VERIFY -> compensate?
+```
+
+## The plan object
+
+`engine/src/plan.py`. A plan is **data, not code** — that is what makes it reviewable,
+shadow-executable and replayable. `RemediationPlan` is **frozen** and carries `runbook`,
+`incident_id`, the target triple, `actions`, `compensation`, `reversibility`, `durability`,
+`blast_radius`, `expected_signal`, `confidence`, `summary`, `cost_delta_inr_month`, `ttl_seconds`
+(**required when `durability == EPHEMERAL`**) and `refusal_reason`.
+
+- `Reversibility`: `reversible` | `partially_reversible` | `irreversible` (always denied by policy).
+- `Durability`: `ephemeral` (imperative, TTL'd) | `durable` (must land in git as a PR).
+- `BlastRadius.score()` stays deliberately arithmetic — `pods + 10*nodes + (20 if user_facing else 0)`.
+  A policy rule a reviewer can evaluate in their head beats a clever weighting nobody trusts.
+- **A refusal is a first-class plan.** `refuse(runbook, incident_id, reason)` returns a plan with
+  `refusal_reason` set and no actions, audited exactly like an action. Keep `is_refusal` a property.
+
+## The policy gate — CEL, in git
+
+`policy/remediation.yaml`, evaluated with `cel-python` in-process. Rules are ordered:
+**first DENY wins, then any REQUIRE_APPROVAL, else ALLOW.** Every rule carries a `message` used
+verbatim in Slack and the ledger.
+
+Adding a guardrail is **a pull request, not a code change**. The policy file is tested:
+`evals/policy_eval.py` requires **every rule to have a must-allow and a must-deny case** and it gates
+merges.
+
+## The runbook contract
+
+`engine/src/runbooks/base.py`. Five members. **The framework, not the runbook, decides whether to
+execute.**
+
+- `plan(incident, target) -> RemediationPlan` — describe intent, read state, mutate nothing.
+- `execute(plan) -> ExecutionResult` — called ONLY after the policy gate and any approval.
+- `compensate(plan) -> ExecutionResult` — must be idempotent; the watchdog may call it after
+  `execute()` already did.
+- `extra_verification(plan, after) -> Optional[str]` — optional runbook-specific probe.
+- `chaos_fixture` property — names the fault injector that proves this runbook. Enforced in CI.
+
+`ExecutionResult` carries `ok`, `detail`, `state_before`, `state_after`. The before/after snapshots
+are what the dashboard diffs and what the compensation test compares byte-for-byte.
+
+## The orchestrator
+
+Everything flows through `engine/src/orchestrator.py`, which is what makes safety **structural**
+rather than a matter of each runbook remembering. Order: ledger `plan_requested` -> `plan()` ->
+ledger `plan` -> refusal check -> `policy.evaluate()` -> ledger `policy` -> deny check -> promotion
+mode check (shadow records and returns) -> approval if required -> **the only mutating window**
+(per-resource lock, capture `before`, `register_compensation()` BEFORE acting, `execute()`, ledger
+`execute`) -> `verifier.schedule()` -> `budget.consume()` -> `recurrence.record()`.
+
+**Every branch is audited, including the two that do nothing.** Preserve that when editing.
+
+## Closed-loop verification
+
+`REMEDIATED` requires all three: the triggering alert **cleared**, the workload's **golden signals
+recovered**, and **no new alert** on the same target that the action could have caused. Otherwise
+compensate and escalate. Signals unavailable -> `inconclusive` and escalate. Never a silent success.
+
+```python
+THROTTLE_RATIO_CEILING = 0.05     # 5% of CFS periods throttled
+PSI_FULL_CEILING       = 0.05     # 5% of wall time fully stalled
+RESTART_TOLERANCE      = 0
+```
+
+Check order: Alertmanager reachability (None -> `inconclusive`), alert still firing, new OOM kills,
+restarts beyond tolerance, throttle ratio, PSI full-stall, `after.new_alerts`. If any tracked signal
+is `None` and nothing else is wrong, the verdict is `inconclusive` — **absence of evidence is never
+evidence of recovery.**
+
+### PromQL that must not be simplified
+
+- **Throttle RATIO**, dimensionless: `rate(container_cpu_cfs_throttled_periods_total[5m]) /
+  rate(container_cpu_cfs_periods_total[5m])`. Raw throttled-period counters move with replica count
+  and window length, which makes a raw comparison meaningless.
+- **OOM by COUNTER**: `increase(container_oom_events_total[10m])`, not the flapping
+  `last_terminated_reason` gauge.
+- **PSI**: `rate(container_pressure_memory_stalled_seconds_total[5m])`.
+- Alert state comes from **Alertmanager API v2** (`GET /api/v2/alerts?filter=...`).
+
+## Compensation — two paths, because one is not enough
+
+1. `compensator.on_verification(plan, verdict)` — verification decided it didn't work.
+2. `watchdog.sweep()` — a CronJob every minute. **A compensation owned by the process that can crash
+   is not a compensation.** Force-reverts executions awaiting verification for >900 s and expires
+   TTL'd ephemeral fixes. Exports `healops_watchdog_actions_total` (alert if > 0).
+
+This is the **saga pattern with a persisted compensating transaction**. Name it that way.
+
+## Budget, breaker, anti-masking
+
+- **Remediation budget**: token bucket over *actions on production* per rolling hour —
+  `global: 20`, `ns:payments: 3`, `ns:shop: 8`, `ns:chaos: 50`. Exhaustion **escalates** rather than queues.
+- **Global circuit breaker** trips on: >3 compensations in 15 min; >2 consecutive verification
+  failures for the same runbook; K8s API error rate >20%; or a manual `healopsctl freeze`. Recovery is
+  `open -> half_open` after 30 min, where **exactly one plan** is allowed through and its outcome
+  decides `closed` or `open` again.
+- **Anti-masking guard**: at `RECURRENCE_THRESHOLD = 4` for the same (runbook, target) within 7 days,
+  demote that (runbook, namespace) to approval mode, **open a GitHub issue** with the rendered masking
+  report, labels `healops` / `recurring-incident` / `needs-root-cause`, and post to Slack.
+
+## Runbook-specific guardrails
+
+- **CPU scale-up** must detect an HPA owning the workload and patch the **HPA target** instead of
+  `replicas`, or refuse. Hard `MAX_REPLICAS_CEILING`, projected-cost check, ephemeral TTL.
+- **Disk cleanup** is **archive-then-delete, never delete-only**, with a 7-day floor, a dry-run
+  listing inside the plan, and a **refusal if the S3 write fails**.
+- **Node drain** refuses if remaining allocatable is under 120% of drained requests, respects PDBs,
+  and always requires approval.
+- **OOM memory bump** goes through in-place resize — see `healops-gitops-remediation`.
+
+## Chaos tests — three per runbook, or it doesn't merge
+
+1. **Fix** — inject the fault, this runbook's plan is chosen, the fault clears **and verification
+   returns `remediated`**.
+2. **Compensation** — after a successful execution, force compensation; cluster state is
+   **byte-identical** to the pre-incident snapshot. Compare with `==`, not "close enough".
+3. **Refusal** — present the case it must refuse; the plan is a refusal or policy denies.
+
+Mark them `@pytest.mark.chaos` so the unit suite stays hermetic.

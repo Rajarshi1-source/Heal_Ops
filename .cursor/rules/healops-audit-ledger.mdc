@@ -1,0 +1,87 @@
+---
+description: HealOps tamper-evident audit layer - hash-chained append-only ledger, canonical JSON, evidence bundles, cosign signing, healopsctl replay/audit/freeze
+globs: engine/src/ledger.py,engine/src/bundles.py,cli/**,evals/ledger_verify.py
+alwaysApply: false
+---
+
+# HealOps Tamper-Evident Audit Ledger
+
+Full skill: `.claude/skills/healops-audit-ledger/SKILL.md`
+
+**A table the application can `UPDATE` is a log, not an audit.** The question an auditor asks is:
+*how would anyone know if a record had been altered?*
+
+## The chain
+
+```
+hash_n = sha256( hash_{n-1} || canonical_json(entry_n) )
+GENESIS = "0" * 64
+```
+
+### Four details that are easy to break
+
+1. **Canonical JSON is load-bearing.** `json.dumps(obj, sort_keys=True, separators=(",", ":"))` — no
+   spaces, deterministic key order. Any change to serialisation invalidates every historical hash, so
+   treat `canonical()` as a **frozen contract**. If it must ever change, version the chain rather than
+   rewriting it.
+2. **The database clock is the single source of time.** `db.now_iso()`, never the application's clock.
+   Two replicas with skewed clocks would produce a chain whose timestamps go backwards.
+3. **The chain is sequential**, so appends serialise. Acceptable at under 100 alerts/hour and worth
+   stating as a deliberate trade-off. If throughput ever mattered, the answer is per-namespace chains
+   with a periodic root, not abandoning the chain.
+4. **`verify_chain` runs hourly in-cluster and in CI**, exported as `healops_ledger_valid` (0/1) with
+   an alert on 0. A tamper-evidence mechanism nobody checks is decoration.
+
+## Schema choices to defend on sight
+
+- **`uuidv7()` keys** (PostgreSQL 18) — timestamp-ordered, so index locality is good and the chain
+  reads chronologically. This is the specific reason the project moved to PG 18.
+- **Monthly partitions** — an append-only table that only grows should be partitioned before it needs
+  to be. A missing partition is an insert failure, which under the fail-closed rule means **no
+  remediation**. Test that path.
+- **`REVOKE UPDATE, DELETE ON audit_ledger FROM healops_app`** — enforcement at the grant level, not
+  by convention. The migration that creates the table performs the revoke; a later migration must
+  never grant them back.
+
+## The rule that matters most
+
+**The ledger append happens in the same transaction as the state change it records.** State and audit
+cannot diverge. Because no ledger write means no action, **the ledger is a precondition, not a side
+effect** — if PostgreSQL is unreachable the engine stops acting and posts to Slack.
+
+Events to append, at minimum: `plan_requested`, `plan`, `policy`, `approve`, `execute`, `verify`,
+`compensate`, `promote`, plus freeze/unfreeze and GitOps pause/resume. **Refusals and denials are
+appended too.**
+
+## Evidence bundles
+
+Every incident produces one **content-addressed** bundle containing the alerts, the correlation
+decision, the plan, the policy decision, the approval (who clicked, when, from which workspace), the
+execution result, before/after signals, the verification verdict, any compensation, and the ledger
+hashes. The `sha256` of the canonical JSON **is** the incident's identity. Link it from the Slack
+message and the PR body.
+
+Signing is keyless OIDC cosign in CI — no key material to lose, the CI identity is the signer. It is
+one CI step, so ship it even if the rest of the ledger work is trimmed for time.
+
+## Offline replay
+
+`healopsctl replay <sha>` reconstructs an incident with **no cluster, no network, no database** — from
+the bundle alone. Keep the output format stable: the dashboard renders replay output as pages for the
+public read-only demo, and the format doubles as a **golden-file test**. Replay must be
+**byte-identical** on repeat runs.
+
+## `healopsctl` surface
+
+- `healopsctl replay <sha>` — offline reconstruction from a bundle
+- `healopsctl audit --verify-chain` — full chain walk; exit non-zero on a break
+- `healopsctl freeze --reason "..."` — global kill switch; the freeze is itself a ledger entry with a
+  reason and an owner
+- `healopsctl plan <incident>` — print the plan a runbook would produce, without executing
+
+## Backup and retention
+
+`pg_dump` on a CronJob to S3 plus WAL archiving. **RPO/RTO for the audit trail matters more than for
+the runbooks** — losing runbook state costs an incident; losing the ledger costs the compliance story.
+Bundles go to object storage independently of the database, so the chain and the evidence have
+separate failure domains.
