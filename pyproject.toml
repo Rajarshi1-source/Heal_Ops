@@ -100,3 +100,9 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = ["celpy.*", "kubernetes.*", "slack_bolt.*", "slack_sdk.*", "boto3.*", "botocore.*"]
 ignore_missing_imports = true
+
+# The Slack adapter is imported lazily and is absent until the integration ships, so the engine
+# runs with no Slack credentials at all.
+[[tool.mypy.overrides]]
+module = ["integrations.slack_app"]
+ignore_missing_imports = true

@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from cache.redis_client import get_client
+from cache.redis_client import decoded, get_client
 from config import get_settings
 
 # Release only if we still hold it. Compare-and-delete must be atomic, so it is a script.
@@ -83,7 +83,7 @@ async def acquire(
 
 async def holder(kind: str, namespace: str | None, name: str) -> str | None:
     """Which plan currently holds this lock, if any. For diagnostics and the dashboard."""
-    return await get_client().get(lock_key(kind, namespace, name))
+    return decoded(await get_client().get(lock_key(kind, namespace, name)))
 
 
 @asynccontextmanager

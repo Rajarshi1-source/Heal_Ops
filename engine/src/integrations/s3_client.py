@@ -67,7 +67,7 @@ async def ensure_bucket() -> bool:
             try:
                 client.create_bucket(Bucket=settings.s3_bucket)
                 return True
-            except (ClientError, BotoCoreError):
+            except ClientError, BotoCoreError:
                 return False
         except BotoCoreError:
             return False
@@ -91,19 +91,22 @@ async def archive_file(local_path: str | Path, key: str) -> ArchivedObject:
     """
     settings = get_settings()
     path = Path(local_path)
-    if not path.is_file():
-        raise ArchiveError(f"{path} is not a file")
 
-    local_size = path.stat().st_size
-
-    def _upload() -> int:
+    # The stat and the upload both block, so they run together in one worker thread rather than
+    # stalling the event loop between them.
+    def _upload() -> tuple[int, int]:
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        local = path.stat().st_size
         client = _client()
         client.upload_file(str(path), settings.s3_bucket, key)
         head = client.head_object(Bucket=settings.s3_bucket, Key=key)
-        return int(head["ContentLength"])
+        return local, int(head["ContentLength"])
 
     try:
-        remote_size = await asyncio.to_thread(_upload)
+        local_size, remote_size = await asyncio.to_thread(_upload)
+    except FileNotFoundError as exc:
+        raise ArchiveError(f"{path} is not a file") from exc
     except (ClientError, BotoCoreError, OSError) as exc:
         raise ArchiveError(f"failed to archive {path} to s3://{settings.s3_bucket}/{key}") from exc
 
@@ -125,7 +128,7 @@ async def object_exists(key: str) -> bool:
         try:
             _client().head_object(Bucket=settings.s3_bucket, Key=key)
             return True
-        except (ClientError, BotoCoreError):
+        except ClientError, BotoCoreError:
             return False
 
     return await asyncio.to_thread(_head)
@@ -146,7 +149,7 @@ async def restore_file(key: str, local_path: str | Path) -> bool:
             path.parent.mkdir(parents=True, exist_ok=True)
             _client().download_file(settings.s3_bucket, key, str(path))
             return True
-        except (ClientError, BotoCoreError, OSError):
+        except ClientError, BotoCoreError, OSError:
             return False
 
     return await asyncio.to_thread(_download)

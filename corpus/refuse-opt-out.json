@@ -1,0 +1,66 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodCrashLooping",
+    "annotations": {},
+    "container": "crashy",
+    "fingerprint": "ee55ff6600aa11bb",
+    "labels": {
+      "alertname": "KubePodCrashLooping",
+      "namespace": "chaos"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker1",
+    "pod": "hands-off-api-6b8c9d7f5-zz99y",
+    "severity": "critical",
+    "starts_at": "2026-08-22T02:25:00Z",
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "new_incident",
+  "expected_effect": "deny",
+  "expected_runbook": "crashloop_rollback",
+  "format_version": 1,
+  "incident_id": "refuse-opt-out",
+  "label_note": "Workload-level kill switch via the healops.io/remediation annotation.",
+  "opened_at": "2026-08-22T02:25:00Z",
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "healops.io/remediation": "disabled"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": null,
+        "cpu_request_millis": null,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/OWNER/healops-chaos:0.1.0",
+        "memory_limit_mib": null,
+        "memory_peak_mib": null,
+        "memory_request_mib": null,
+        "memory_resize_policy": null,
+        "name": "crashy",
+        "restart_count": 6
+      }
+    ],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {
+      "app": "hands-off-api"
+    },
+    "name": "hands-off-api",
+    "namespace": "chaos",
+    "node": "healops-worker1",
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "hands-off-api-6b8c9d7f5-zz99y"
+    ],
+    "previous_image": "ghcr.io/OWNER/healops-chaos:0.0.9",
+    "previous_revision": 2,
+    "ready_replicas": 0,
+    "replicas": 2,
+    "revision": 3,
+    "server_supports_in_place_resize": true
+  }
+}

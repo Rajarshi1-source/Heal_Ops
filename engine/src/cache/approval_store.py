@@ -20,7 +20,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from cache.redis_client import get_client
+from cache.redis_client import decoded, get_client
 
 ApprovalStatus = Literal["pending", "approved", "rejected", "expired"]
 
@@ -83,7 +83,7 @@ async def peek(execution_id: int | str) -> CachedApproval | None:
     Returns None on a miss *and* on any error -- an unreachable cache must not become a decision.
     """
     try:
-        raw = await get_client().get(cache_key(execution_id))
+        raw = decoded(await get_client().get(cache_key(execution_id)))
     except Exception:  # noqa: BLE001 - a cache failure degrades, never authorises
         return None
     return CachedApproval.from_json(raw) if raw else None

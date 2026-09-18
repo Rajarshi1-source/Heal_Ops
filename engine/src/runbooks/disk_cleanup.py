@@ -11,11 +11,14 @@ The only runbook here that touches data, so it is the most conservative:
 * **If S3 is unreachable, it refuses.** Deleting logs because the archive destination is down would
   turn disk pressure into data loss.
 
-Classified `partially_reversible`: the bytes can be restored from S3, but the deletion happened. That
+Classified `partially_reversible`: the bytes come back from S3, but the deletion happened. That
 honesty is what routes it through the policy gate's approval rule instead of the auto path.
 """
 
 from __future__ import annotations
+
+import asyncio
+from typing import TypedDict
 
 import structlog
 
@@ -42,6 +45,18 @@ MAX_ARCHIVE_BYTES = 5 * 1024**3
 MIN_ARCHIVE_BYTES = 32 * 1024**2
 
 DISK_TTL_SECONDS = 7200
+
+
+class Candidate(TypedDict):
+    """One archive candidate, captured into the bundle before planning.
+
+    The shape is a contract between the chaos harness, the live capture path and this runbook, which
+    is why it is declared rather than passed around as a loose dict.
+    """
+
+    path: str
+    size_bytes: int
+    age_days: float
 
 
 class DiskCleanup(Runbook):
@@ -73,7 +88,7 @@ class DiskCleanup(Runbook):
                 target_namespace=target.namespace,
             )
 
-        total = sum(int(c.get("size_bytes", 0)) for c in candidates)
+        total = sum(c["size_bytes"] for c in candidates)
         if total < MIN_ARCHIVE_BYTES:
             return refuse(
                 self.name,
@@ -86,11 +101,11 @@ class DiskCleanup(Runbook):
             )
 
         # Oldest first, so the cap keeps the least useful data rather than an arbitrary slice.
-        ordered = sorted(candidates, key=lambda c: float(c.get("age_days", 0)), reverse=True)
-        selected: list[dict[str, object]] = []
+        ordered = sorted(candidates, key=lambda c: c["age_days"], reverse=True)
+        selected: list[Candidate] = []
         running = 0
         for candidate in ordered:
-            size = int(candidate.get("size_bytes", 0))
+            size = candidate["size_bytes"]
             if running + size > MAX_ARCHIVE_BYTES:
                 continue
             selected.append(candidate)
@@ -122,7 +137,10 @@ class DiskCleanup(Runbook):
             name=target.name,
             namespace=None,
             body={
-                "files": [{"path": c["path"], "key": _key_for(target.name, str(c["path"]))} for c in selected],
+                "files": [
+                    {"path": c["path"], "key": _key_for(target.name, str(c["path"]))}
+                    for c in selected
+                ],
                 "bucket": settings.s3_bucket,
             },
         )
@@ -146,7 +164,7 @@ class DiskCleanup(Runbook):
                 alert_should_clear="NodeDiskPressure",
                 queries={
                     "disk_used_ratio": (
-                        "max(1 - (node_filesystem_avail_bytes{mountpoint=\"/\"} / "
+                        'max(1 - (node_filesystem_avail_bytes{mountpoint="/"} / '
                         'node_filesystem_size_bytes{mountpoint="/"}))'
                     )
                 },
@@ -171,7 +189,7 @@ class DiskCleanup(Runbook):
         from integrations import s3_client
 
         action = plan.actions[0]
-        files = list(action.body["files"])  # type: ignore[arg-type]
+        files: list[Candidate] = list(action.body["files"])
 
         before = {
             "node": plan.target_name,
@@ -217,9 +235,10 @@ class DiskCleanup(Runbook):
                     },
                 )
 
-            # Only now is deletion safe: the object exists in S3 at the right size.
+            # Only now is deletion safe: the object exists in S3 at the right size. The unlink is
+            # blocking, so it runs in a worker thread rather than on the event loop.
             try:
-                path.unlink()
+                await asyncio.to_thread(path.unlink)
             except OSError as exc:
                 log.warning("archived but could not delete", path=str(path), error=str(exc))
                 continue
@@ -252,7 +271,7 @@ class DiskCleanup(Runbook):
         from integrations import s3_client
 
         undo = plan.compensation[0]
-        entries = list(undo.body["files"])  # type: ignore[arg-type]
+        entries: list[dict[str, str]] = list(undo.body["files"])
 
         before = {"node": plan.target_name, "restoring": len(entries)}
         restored: list[str] = []
@@ -260,7 +279,9 @@ class DiskCleanup(Runbook):
 
         for entry in entries:
             path = Path(str(entry["path"]))
-            if path.exists():
+            # Idempotent: a file already back on disk needs no restore. Both the verifier and the
+            # watchdog may call this, so the second call must be a no-op rather than a re-download.
+            if await asyncio.to_thread(path.exists):
                 continue
             key = str(entry["key"])
             if not await s3_client.object_exists(key):
@@ -282,7 +303,7 @@ class DiskCleanup(Runbook):
         )
 
 
-def _candidates_from_bundle(bundle: IncidentBundle) -> list[dict[str, object]]:
+def _candidates_from_bundle(bundle: IncidentBundle) -> list[Candidate]:
     """Archive candidates, captured into the bundle before planning.
 
     Read from the cause alert's annotations so the planner performs no I/O. The chaos harness and
@@ -295,9 +316,25 @@ def _candidates_from_bundle(bundle: IncidentBundle) -> list[dict[str, object]]:
 
     try:
         parsed = json.loads(raw)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return []
-    return parsed if isinstance(parsed, list) else []
+    if not isinstance(parsed, list):
+        return []
+
+    # Validate each entry rather than trusting the shape. A malformed candidate would otherwise
+    # raise deep inside planning, and a runbook that crashes is strictly worse than one that
+    # refuses -- a crash produces no plan, no ledger entry and no explanation.
+    candidates: list[Candidate] = []
+    for entry in parsed:
+        if not isinstance(entry, dict):
+            continue
+        path, size, age = entry.get("path"), entry.get("size_bytes"), entry.get("age_days")
+        if not isinstance(path, str):
+            continue
+        if not isinstance(size, int | float) or not isinstance(age, int | float):
+            continue
+        candidates.append(Candidate(path=path, size_bytes=int(size), age_days=float(age)))
+    return candidates
 
 
 def _key_for(node: str, path: str) -> str:

@@ -8,11 +8,23 @@ rather than a safety incident.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import redis.asyncio as redis
 
 from config import get_settings
 
 _client: redis.Redis | None = None
+
+
+def decoded(value: Any) -> str | None:
+    """Narrow a Redis reply to `str`.
+
+    The client is created with `decode_responses=True`, so every reply is already a `str`. The type
+    stubs describe the general `bytes | str` case because they cannot see that flag, so this helper
+    puts the narrowing in one place instead of scattering casts through the callers.
+    """
+    return cast(str | None, value)
 
 
 def get_client() -> redis.Redis:

@@ -79,9 +79,7 @@ class CpuScaleUp(Runbook):
             return self._plan_via_hpa(bundle, target, hpa)
         return self._plan_via_replicas(bundle, target, settings.max_replicas_ceiling)
 
-    def _plan_via_hpa(
-        self, bundle: IncidentBundle, target: Target, hpa: object
-    ) -> RemediationPlan:
+    def _plan_via_hpa(self, bundle: IncidentBundle, target: Target, hpa: object) -> RemediationPlan:
         from bundle import AutoscalerState
 
         assert isinstance(hpa, AutoscalerState)
@@ -115,7 +113,7 @@ class CpuScaleUp(Runbook):
             )
 
         new_max = hpa.max_replicas
-        new_target = current_target
+        new_target: int | None = current_target
         changes: list[str] = []
 
         if at_max:
@@ -146,12 +144,14 @@ class CpuScaleUp(Runbook):
                 target_namespace=target.namespace,
             )
 
-        body = {}
-        undo_body = {}
+        # Only the fields that actually change are carried, so the plan reads as the exact patch a
+        # reviewer would apply by hand rather than a full object with one edit buried in it.
+        body: dict[str, int] = {}
+        undo_body: dict[str, int] = {}
         if new_max != hpa.max_replicas:
             body["max_replicas"] = new_max
             undo_body["max_replicas"] = hpa.max_replicas
-        if new_target != current_target and new_target is not None:
+        if new_target is not None and current_target is not None and new_target != current_target:
             body["target_utilization"] = new_target
             undo_body["target_utilization"] = current_target
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import cast
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
@@ -79,7 +80,7 @@ async def db_now(session: AsyncSession) -> datetime:
     go backwards, and a chain that disagrees with itself about ordering is not evidence.
     """
     result = await session.execute(text("SELECT now()"))
-    return result.scalar_one()
+    return cast(datetime, result.scalar_one())
 
 
 async def ping() -> bool:

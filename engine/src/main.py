@@ -24,7 +24,7 @@ from fastapi.responses import PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 import metrics
-from api import health, webhooks
+from api import health, runbooks, webhooks
 from cache import redis_client, streams
 from config import get_settings
 from db import connection
@@ -90,6 +90,7 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(webhooks.router)
+app.include_router(runbooks.router)
 
 
 @app.get("/metrics", include_in_schema=False)

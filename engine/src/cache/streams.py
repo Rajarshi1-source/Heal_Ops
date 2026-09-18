@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from redis.exceptions import ResponseError
 
@@ -52,10 +52,11 @@ async def ensure_groups() -> None:
 async def enqueue(kind: str, payload: dict[str, Any]) -> str:
     """Add a job. Called after the alert is durable in PostgreSQL, never before."""
     settings = get_settings()
-    return await get_client().xadd(
+    message_id = await get_client().xadd(
         settings.stream_name,
         {"kind": kind, "payload": json.dumps(payload, separators=(",", ":"))},
     )
+    return str(message_id)
 
 
 async def enqueue_batch(jobs: list[tuple[str, dict[str, Any]]]) -> list[str]:
@@ -67,7 +68,7 @@ async def enqueue_batch(jobs: list[tuple[str, dict[str, Any]]]) -> list[str]:
             settings.stream_name,
             {"kind": kind, "payload": json.dumps(payload, separators=(",", ":"))},
         )
-    return list(await pipe.execute())
+    return [str(message_id) for message_id in await pipe.execute()]
 
 
 def _parse(message_id: str, fields: dict[str, str], delivery_count: int) -> QueuedJob:
@@ -82,8 +83,11 @@ def _parse(message_id: str, fields: dict[str, str], delivery_count: int) -> Queu
 async def read(group: str, consumer: str, count: int = 10, block_ms: int = 5000) -> list[QueuedJob]:
     """Read new messages for this consumer group."""
     settings = get_settings()
-    response = await get_client().xreadgroup(
-        group, consumer, {settings.stream_name: ">"}, count=count, block=block_ms
+    response = cast(
+        list[tuple[str, list[tuple[str, dict[str, str]]]]],
+        await get_client().xreadgroup(
+            group, consumer, {settings.stream_name: ">"}, count=count, block=block_ms
+        ),
     )
     jobs: list[QueuedJob] = []
     for _stream, messages in response or []:
@@ -102,8 +106,11 @@ async def claim_stale(
     """
     settings = get_settings()
     client = get_client()
-    result = await client.xautoclaim(
-        settings.stream_name, group, consumer, min_idle_time=min_idle_ms, count=count
+    result = cast(
+        "tuple[str, list[tuple[str, dict[str, str]]], list[str]]",
+        await client.xautoclaim(
+            settings.stream_name, group, consumer, min_idle_time=min_idle_ms, count=count
+        ),
     )
     messages = result[1] if len(result) > 1 else []
 
@@ -141,7 +148,7 @@ async def to_dlq(group: str, job: QueuedJob, reason: str) -> str:
         },
     )
     await client.xack(settings.stream_name, group, job.message_id)
-    return message_id
+    return str(message_id)
 
 
 async def dlq_depth() -> int:

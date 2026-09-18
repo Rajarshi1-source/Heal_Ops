@@ -122,9 +122,19 @@ async def ingest_alert(
         created = True
         incident_id = incident.id
     else:
-        assert decision.incident_id is not None
-        incident = await session.get(Incident, decision.incident_id)
-        assert incident is not None
+        if decision.incident_id is None:
+            raise RuntimeError(
+                f"correlator returned action={decision.action!r} with no incident id; "
+                "attaching an alert to nothing would lose it"
+            )
+        existing = await session.get(Incident, decision.incident_id)
+        if existing is None:
+            # The incident was open when the correlator looked and is gone now. Losing the alert is
+            # worse than a duplicate incident, so fail loudly and let the retry re-correlate.
+            raise RuntimeError(
+                f"incident {decision.incident_id} disappeared between correlation and persistence"
+            )
+        incident = existing
         incident_id = incident.id
         incident.alert_count += 1
 

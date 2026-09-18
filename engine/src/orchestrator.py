@@ -22,7 +22,7 @@ at all -- which is why it is persisted rather than held in memory.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, assert_never
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,11 +33,11 @@ import policy as policy_module
 from bundle import IncidentBundle, Target
 from cache import locks
 from config import get_settings
-from core.incident_state import IncidentState, assert_transition
-from db.models import Incident, RemediationPlanRow, RunbookExecution
+from core.incident_state import assert_transition
+from db.models import Incident, IncidentState, RemediationPlanRow, RunbookExecution
 from plan import RemediationPlan
 from policy import BudgetSnapshot, PolicyDecision, PromotionSnapshot, TargetView
-from runbooks.base import ExecutionResult, Runbook
+from runbooks.base import Runbook
 
 log = structlog.get_logger(__name__)
 
@@ -77,8 +77,6 @@ async def handle(
     The caller owns the transaction, so every ledger append here lands in the same commit as the
     state change it records.
     """
-    settings = get_settings()
-
     await ledger.append(
         session,
         "plan_requested",
@@ -93,9 +91,7 @@ async def handle(
     plan = runbook.plan(bundle, target)
     plan = plan.with_plan_id(plan.plan_id or "")
 
-    await ledger.append(
-        session, "plan", plan.to_dict(), incident_id=incident.id
-    )
+    await ledger.append(session, "plan", plan.to_dict(), incident_id=incident.id)
 
     if plan.is_refusal:
         # A refusal is a first-class outcome, not an error. It is recorded, counted and reported.
@@ -120,9 +116,7 @@ async def handle(
         budget or BudgetSnapshot(),
         promotion or PromotionSnapshot(),
     )
-    await ledger.append(
-        session, "policy", decision.to_dict(), incident_id=incident.id
-    )
+    await ledger.append(session, "policy", decision.to_dict(), incident_id=incident.id)
     plan_row = await _persist_plan(session, incident, plan, decision)
     metrics.plans_total.labels(runbook=runbook.name, decision=decision.effect).inc()
 
@@ -163,7 +157,11 @@ async def handle(
         await ledger.append(
             session,
             "shadow",
-            {"plan_id": plan_row.id, "summary": plan.summary, "would_have": plan.describe_actions()},
+            {
+                "plan_id": plan_row.id,
+                "summary": plan.summary,
+                "would_have": plan.describe_actions(),
+            },
             incident_id=incident.id,
             execution_id=execution.id,
         )
@@ -251,9 +249,7 @@ async def execute_approved(
     """
     settings = get_settings()
 
-    incident.state = assert_transition(
-        incident.id, incident.state, IncidentState.EXECUTING
-    ).value
+    incident.state = assert_transition(incident.id, incident.state, IncidentState.EXECUTING).value
     execution.status = "executing"
     await session.flush()
 
@@ -325,11 +321,9 @@ async def execute_approved(
             detail=result.detail,
         )
 
-    # Applied. NOT successful -- success means the incident is over, and that is the verifier's call.
+    # Applied, NOT successful. Success means the incident is over, which is the verifier's call.
     execution.status = "awaiting_verification"
-    incident.state = assert_transition(
-        incident.id, incident.state, IncidentState.VERIFYING
-    ).value
+    incident.state = assert_transition(incident.id, incident.state, IncidentState.VERIFYING).value
     await session.flush()
 
     log.info(
@@ -348,7 +342,7 @@ async def execute_approved(
     )
 
 
-# --- helpers ---------------------------------------------------------------------------------------
+# --- helpers -------------------------------------------------------------------------------------
 
 
 def _target_view(target: Target) -> TargetView:
@@ -432,7 +426,7 @@ async def _register_compensation(
     """Make the undo durable before the action runs.
 
     The compensation already lives on the plan row; recording the expiry here is what lets the
-    watchdog find and reverse this execution without needing the process that created it to be alive.
+    watchdog find and reverse this execution without the process that created it still being alive.
     """
     from datetime import timedelta
 
@@ -462,4 +456,7 @@ def summarise_for_slack(result: HandleResult) -> str:
             return f"FAILED to apply: {plan.summary} -- {result.detail}"
         case "blocked":
             return f"BLOCKED: {result.detail}"
-    return plan.summary
+        case _:
+            # No fallback string. Adding an outcome without a message here is a type error, which
+            # is what stops a new branch from silently reaching Slack as a bare summary.
+            assert_never(result.outcome)
