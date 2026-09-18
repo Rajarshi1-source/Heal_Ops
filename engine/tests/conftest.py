@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -50,6 +51,40 @@ async def db_session() -> AsyncIterator[AsyncSession]:
             await session.close()
             await trans.rollback()
     await engine.dispose()
+
+
+TEST_REDIS_URL = os.environ.get("HEALOPS_TEST_REDIS_URL", "redis://localhost:56379/0")
+
+
+@pytest_asyncio.fixture
+async def redis_client_fixture() -> AsyncIterator[Any]:
+    """A real Valkey/Redis, flushed between tests.
+
+    Locks, streams and dedup are all built out of server-side semantics -- `SET NX`, Lua
+    compare-and-delete, consumer-group bookkeeping. A fake would test the fake.
+    """
+    import redis.asyncio as aioredis
+
+    from cache import redis_client as module
+
+    client = aioredis.from_url(TEST_REDIS_URL, decode_responses=True)
+    try:
+        await client.ping()
+    except Exception as exc:  # noqa: BLE001
+        await client.aclose()
+        pytest.skip(f"Redis/Valkey not reachable at {TEST_REDIS_URL}: {exc}")
+
+    await client.flushdb()
+
+    # Point the module-level singleton at the test server for the duration of the test.
+    previous = module._client
+    module._client = client
+    try:
+        yield client
+    finally:
+        module._client = previous
+        await client.flushdb()
+        await client.aclose()
 
 
 @pytest.fixture

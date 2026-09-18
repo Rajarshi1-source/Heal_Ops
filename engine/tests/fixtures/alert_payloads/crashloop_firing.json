@@ -1,0 +1,52 @@
+{
+  "receiver": "healops",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "KubePodCrashLooping",
+        "container": "crashy-api",
+        "endpoint": "http-metrics",
+        "healops_runbook": "crashloop_rollback",
+        "job": "kube-state-metrics",
+        "namespace": "chaos",
+        "node": "healops-worker2",
+        "pod": "crashy-api-7d9f8b6c5d-x2p4q",
+        "prometheus": "monitoring/kps-prometheus",
+        "reason": "CrashLoopBackOff",
+        "service": "kps-kube-state-metrics",
+        "severity": "critical",
+        "uid": "6f1c0f1e-6a3f-4d3a-9c1b-2c9a7b5e1f01"
+      },
+      "annotations": {
+        "description": "Container crashy-api in chaos/crashy-api-7d9f8b6c5d-x2p4q on node healops-worker2 has been in CrashLoopBackOff for 2m.",
+        "runbook_url": "https://github.com/OWNER/healops/blob/main/RUNBOOKS.md#crashloop_rollback",
+        "summary": "Pod chaos/crashy-api-7d9f8b6c5d-x2p4q is crash looping"
+      },
+      "startsAt": "2026-08-22T02:14:07.891Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://kps-prometheus.monitoring:9090/graph?g0.expr=max+by+%28namespace%2C+pod%2C+container%29",
+      "fingerprint": "8f4c1d2a9b3e7f60"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "KubePodCrashLooping",
+    "namespace": "chaos",
+    "node": "healops-worker2"
+  },
+  "commonLabels": {
+    "alertname": "KubePodCrashLooping",
+    "container": "crashy-api",
+    "namespace": "chaos",
+    "node": "healops-worker2",
+    "severity": "critical"
+  },
+  "commonAnnotations": {
+    "summary": "Pod chaos/crashy-api-7d9f8b6c5d-x2p4q is crash looping"
+  },
+  "externalURL": "http://kps-alertmanager.monitoring:9093",
+  "version": "4",
+  "groupKey": "{}/{severity=~\"critical|warning\"}:{alertname=\"KubePodCrashLooping\", namespace=\"chaos\", node=\"healops-worker2\"}",
+  "truncatedAlerts": 0
+}

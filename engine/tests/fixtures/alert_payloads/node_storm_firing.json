@@ -1,0 +1,93 @@
+{
+  "receiver": "healops",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "KubeNodeNotReady",
+        "condition": "Ready",
+        "job": "kube-state-metrics",
+        "node": "healops-worker3",
+        "severity": "critical",
+        "status": "true",
+        "healops_runbook": "node_drain"
+      },
+      "annotations": {
+        "summary": "Node healops-worker3 has been NotReady for 3m",
+        "description": "The Ready condition on healops-worker3 has been false for 3m. Pod-level alerts on this node are symptoms and are inhibited in Alertmanager, then correlated as evidence in the engine."
+      },
+      "startsAt": "2026-08-22T02:14:00.000Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "fingerprint": "aa11bb22cc33dd44"
+    },
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "KubePodCrashLooping",
+        "container": "checkout",
+        "namespace": "shop",
+        "node": "healops-worker3",
+        "pod": "checkout-5f7d9c8b4a-k1m2n",
+        "reason": "CrashLoopBackOff",
+        "severity": "critical",
+        "healops_runbook": "crashloop_rollback"
+      },
+      "annotations": {
+        "summary": "Pod shop/checkout-5f7d9c8b4a-k1m2n is crash looping"
+      },
+      "startsAt": "2026-08-22T02:14:20.000Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "fingerprint": "bb22cc33dd44ee55"
+    },
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "KubePodCrashLooping",
+        "container": "cart",
+        "namespace": "shop",
+        "node": "healops-worker3",
+        "pod": "cart-6a8b0d1e2f-p3q4r",
+        "reason": "CrashLoopBackOff",
+        "severity": "critical",
+        "healops_runbook": "crashloop_rollback"
+      },
+      "annotations": {
+        "summary": "Pod shop/cart-6a8b0d1e2f-p3q4r is crash looping"
+      },
+      "startsAt": "2026-08-22T02:14:25.000Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "fingerprint": "cc33dd44ee55ff66"
+    },
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "KubePodOOMKilled",
+        "container": "search",
+        "namespace": "shop",
+        "node": "healops-worker3",
+        "pod": "search-7b9c1e2f3a-s5t6u",
+        "severity": "critical",
+        "healops_runbook": "oom_memory_bump"
+      },
+      "annotations": {
+        "summary": "Container search was OOM killed"
+      },
+      "startsAt": "2026-08-22T02:14:30.000Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "fingerprint": "dd44ee55ff6600aa"
+    }
+  ],
+  "groupLabels": {
+    "node": "healops-worker3"
+  },
+  "commonLabels": {
+    "node": "healops-worker3",
+    "severity": "critical"
+  },
+  "commonAnnotations": {},
+  "externalURL": "http://kps-alertmanager.monitoring:9093",
+  "version": "4",
+  "groupKey": "{}/{severity=~\"critical|warning\"}:{node=\"healops-worker3\"}",
+  "truncatedAlerts": 0
+}

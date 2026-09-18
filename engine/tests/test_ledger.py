@@ -129,10 +129,7 @@ async def test_append_links_entries_into_a_chain(db_session: AsyncSession) -> No
 
     rows = (
         await db_session.execute(
-            text(
-                "SELECT prev_hash, hash FROM audit_ledger "
-                "WHERE hash = ANY(:hashes) ORDER BY seq"
-            ),
+            text("SELECT prev_hash, hash FROM audit_ledger WHERE hash = ANY(:hashes) ORDER BY seq"),
             {"hashes": [first, second, third]},
         )
     ).all()

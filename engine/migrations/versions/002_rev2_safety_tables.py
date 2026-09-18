@@ -1,4 +1,4 @@
-"""Rev 2 safety tables: plans, verifications, the hash-chained ledger, promotion, budget, recurrence.
+"""Rev 2 safety tables: plans, verifications, ledger, promotion, budget, recurrence.
 
 Three choices here are worth being able to defend on sight:
 
@@ -30,6 +30,18 @@ depends_on: str | Sequence[str] | None = None
 APP_ROLE = "healops_app"
 
 
+def _role_exists(role: str) -> bool:
+    """Whether the application role is present.
+
+    It is absent in a bare test database and present in any real deployment, so the grant steps are
+    conditional rather than assumed.
+    """
+    result = op.get_bind().execute(
+        sa.text("SELECT 1 FROM pg_roles WHERE rolname = :role"), {"role": role}
+    )
+    return result.scalar() is not None
+
+
 def upgrade() -> None:
     # --- 1. RemediationPlan: what we intend to do, before we do it ------------------------------
     op.create_table(
@@ -55,9 +67,7 @@ def upgrade() -> None:
         sa.Column("expected_signal", postgresql.JSONB(), nullable=False),
         sa.Column("confidence", sa.Numeric(4, 3), nullable=False),
         sa.Column("summary", sa.Text(), nullable=False, server_default=""),
-        sa.Column(
-            "cost_delta_inr_month", sa.Numeric(12, 2), nullable=False, server_default="0"
-        ),
+        sa.Column("cost_delta_inr_month", sa.Numeric(12, 2), nullable=False, server_default="0"),
         sa.Column("refusal_reason", sa.Text(), nullable=True),
         sa.Column("policy_decision", sa.Text(), nullable=False),
         sa.Column(
@@ -112,9 +122,7 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(
-            ["execution_id"], ["runbook_executions.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["execution_id"], ["runbook_executions.id"], ondelete="CASCADE"),
         sa.CheckConstraint(
             "outcome IN ('remediated','not_recovered','inconclusive')",
             name="ck_verifications_outcome",
@@ -150,9 +158,14 @@ def upgrade() -> None:
     # A helper the partition CronJob calls, so creating next month's partition is one statement
     # rather than a templated migration. A missing partition means inserts fail, which under
     # fail-closed means no remediation -- so this path is tested, not assumed.
+    # The role name is passed as an argument rather than interpolated, so the function body is a
+    # fixed string and `format(%I)` quotes both identifiers for us.
     op.execute(
         """
-        CREATE OR REPLACE FUNCTION ensure_ledger_partition(for_month DATE)
+        CREATE OR REPLACE FUNCTION ensure_ledger_partition(
+            for_month DATE,
+            app_role   TEXT DEFAULT NULL
+        )
         RETURNS TEXT AS $$
         DECLARE
             start_date DATE := date_trunc('month', for_month)::DATE;
@@ -164,7 +177,14 @@ def upgrade() -> None:
                     'CREATE TABLE %I PARTITION OF audit_ledger FOR VALUES FROM (%L) TO (%L)',
                     part_name, start_date, end_date
                 );
-                EXECUTE format('GRANT SELECT, INSERT ON %I TO %I', part_name, '""" + APP_ROLE + """');
+                -- Only SELECT and INSERT. A new partition must never widen what the application
+                -- can do to the ledger.
+                IF app_role IS NOT NULL
+                   AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = app_role) THEN
+                    EXECUTE format(
+                        'GRANT SELECT, INSERT ON %I TO %I', part_name, app_role
+                    );
+                END IF;
             END IF;
             RETURN part_name;
         END;
@@ -173,25 +193,25 @@ def upgrade() -> None:
     )
 
     # Current month plus the next two, so a partition gap cannot halt remediation while the
-    # CronJob is being wired up.
-    op.execute("SELECT ensure_ledger_partition(CURRENT_DATE);")
-    op.execute("SELECT ensure_ledger_partition((CURRENT_DATE + INTERVAL '1 month')::DATE);")
-    op.execute("SELECT ensure_ledger_partition((CURRENT_DATE + INTERVAL '2 months')::DATE);")
+    # CronJob is being wired up. A missing partition is an insert failure, and under fail-closed
+    # that means no remediation at all.
+    for offset in ("0 months", "1 month", "2 months"):
+        op.execute(
+            sa.text(
+                "SELECT ensure_ledger_partition("
+                "(CURRENT_DATE + CAST(:offset AS INTERVAL))::DATE, :role)"
+            ).bindparams(offset=offset, role=APP_ROLE)
+        )
 
-    # Append-only enforcement at the grant level. A later migration must never grant these back.
-    op.execute(
-        f"""
-        DO $$
-        BEGIN
-            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{APP_ROLE}') THEN
-                GRANT SELECT, INSERT ON audit_ledger TO {APP_ROLE};
-                REVOKE UPDATE, DELETE, TRUNCATE ON audit_ledger FROM {APP_ROLE};
-                GRANT USAGE, SELECT ON SEQUENCE audit_ledger_seq_seq TO {APP_ROLE};
-            END IF;
-        END
-        $$;
-        """
-    )
+    # Append-only enforcement at the GRANT level, not by convention. A later migration must never
+    # grant these back: an audit table the application can rewrite is not an audit table.
+    #
+    # The role is checked in Python rather than in a DO block, because a plpgsql DO block cannot
+    # take bind parameters. APP_ROLE is a module constant, never user input.
+    if _role_exists(APP_ROLE):
+        op.execute(f'GRANT SELECT, INSERT ON audit_ledger TO "{APP_ROLE}"')
+        op.execute(f'REVOKE UPDATE, DELETE, TRUNCATE ON audit_ledger FROM "{APP_ROLE}"')
+        op.execute(f'GRANT USAGE, SELECT ON SEQUENCE audit_ledger_seq_seq TO "{APP_ROLE}"')
 
     # --- 4. Promotion ladder --------------------------------------------------------------------
     op.create_table(

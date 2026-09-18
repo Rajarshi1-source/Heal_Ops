@@ -56,6 +56,7 @@ asyncio_mode = "auto"
 markers = [
     "chaos: requires a live kind cluster with real fault injection (excluded from the unit gate)",
     "db: requires a live PostgreSQL 18 (CI provides one as a service container)",
+    "redis: requires a live Valkey 9 or Redis 8 (CI provides one as a service container)",
 ]
 
 [tool.coverage.run]
@@ -85,6 +86,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "engine/tests/*" = ["S105", "S106"]
 "evals/*" = ["S105", "S106"]
+# Migrations build DDL as strings because GRANT/REVOKE and CREATE TABLE cannot be parameterised.
+# The interpolated values are module constants, never request data.
+"engine/migrations/versions/*" = ["S608"]
 
 [tool.mypy]
 python_version = "3.14"

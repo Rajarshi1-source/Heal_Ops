@@ -102,9 +102,7 @@ class ChainStatus:
 
 
 async def last_hash(session: AsyncSession) -> str:
-    row = await session.execute(
-        select(AuditLedger.hash).order_by(AuditLedger.seq.desc()).limit(1)
-    )
+    row = await session.execute(select(AuditLedger.hash).order_by(AuditLedger.seq.desc()).limit(1))
     return row.scalar_one_or_none() or GENESIS
 
 

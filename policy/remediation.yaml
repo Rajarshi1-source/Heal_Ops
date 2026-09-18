@@ -1,0 +1,182 @@
+# HealOps policy gate.
+#
+# Every plan is evaluated against these rules before anything executes. Two properties are worth
+# stating out loud, because they are the reason this is a YAML file rather than Python:
+#
+#   1. Adding a guardrail is a PULL REQUEST, not a code change. A reviewer can see exactly what the
+#      automation is now forbidden to do, without reading a runbook.
+#   2. The policy file is TESTED. `evals/policy_eval.py` requires every rule below to carry at
+#      least one must-allow and one must-deny case, and it gates merges.
+#
+# Evaluation order is fixed and not configurable:
+#
+#   first DENY wins  ->  then any REQUIRE_APPROVAL  ->  else ALLOW
+#
+# Expressions are CEL, evaluated in-process with cel-python. The variables in scope are:
+#
+#   plan       the RemediationPlan (see engine/src/plan.py)
+#   target     the object being acted on, from the incident bundle
+#   budget     the remediation budget and breaker state for the namespace
+#   promotion  the (runbook, namespace) rung on the promotion ladder
+#
+# `message` is used verbatim in Slack and in the ledger entry, so write it for a human who is
+# reading it at 3 a.m. and has not seen this file.
+
+version: 1
+
+rules:
+  # ---------------------------------------------------------------------------------------------
+  # DENY -- evaluated first, and the first match ends evaluation.
+  # ---------------------------------------------------------------------------------------------
+
+  - id: deny-irreversible
+    effect: deny
+    expr: 'plan.reversibility == "irreversible"'
+    message: >-
+      Denied: this action cannot be undone. HealOps does not perform irreversible actions, however
+      confident it is.
+
+  - id: deny-self-remediation
+    effect: deny
+    # HealOps never remediates HealOps. A system that can restart itself mid-decision can lose the
+    # incident it was handling. This rule lives here, in the policy file, and not in code -- which
+    # is the whole point of policy-as-code.
+    expr: 'plan.target_namespace == "healops"'
+    message: >-
+      Denied: HealOps does not remediate its own namespace. Restarting the engine mid-decision
+      would lose the incident it is handling.
+
+  - id: deny-outside-allowed-namespaces
+    effect: deny
+    expr: '!(plan.target_namespace in ["shop", "payments", "default", "chaos"])'
+    message: >-
+      Denied: this namespace is not in the allow-list. Automation is opt-in per namespace, so a new
+      namespace gets no automation until someone adds it here.
+
+  - id: deny-protected-workloads
+    effect: deny
+    # Stateful workloads are excluded wholesale. A rollback or a restart on a StatefulSet risks
+    # data, and no blast-radius score makes that acceptable.
+    expr: 'plan.target_kind == "StatefulSet" || plan.target_name.startsWith("db-")'
+    message: >-
+      Denied: stateful workloads are excluded from automated remediation. This needs a human who
+      can reason about the data.
+
+  - id: deny-kill-switch
+    effect: deny
+    # The workload-level opt-out. A team can exclude their own service without a HealOps deploy,
+    # which is what makes the kill switch usable during an incident.
+    #
+    # This reads the resolved boolean rather than indexing `target.annotations` directly. CEL raises
+    # on an absent map key and this gate treats a raising rule as a deny, so indexing here would
+    # deny every workload that has no annotations at all.
+    expr: 'target.remediation_disabled'
+    message: >-
+      Denied: this workload carries healops.io/remediation=disabled. Someone opted it out
+      deliberately.
+
+  - id: deny-single-replica-disruptive
+    effect: deny
+    # One replica means there is no safe blast radius: any disruption is a full outage of that
+    # workload. Reversible actions are still allowed, because scaling up or resizing does not
+    # take the single replica down.
+    expr: 'target.replicas < 2 && plan.reversibility != "reversible"'
+    message: >-
+      Denied: this workload runs a single replica, so a disruptive fix is a full outage. Scale it
+      up or accept manual handling.
+
+  - id: deny-budget-exhausted
+    effect: deny
+    # An error budget for automation. If HealOps needs to act more than its hourly allowance, the
+    # cluster has a systemic problem and a human should be looking at it -- so exhaustion
+    # ESCALATES rather than queues.
+    expr: 'budget.used_actions >= budget.max_actions'
+    message: >-
+      Denied: the remediation budget for this namespace is exhausted for the current hour. Too many
+      fixes in one hour is a systemic problem, not a series of incidents.
+
+  - id: deny-breaker-open
+    effect: deny
+    expr: 'budget.breaker_state == "open"'
+    message: >-
+      Denied: the global remediation breaker is open, so all automation is halted until a human
+      clears it. Either repeated compensations tripped it or someone ran `healopsctl freeze`.
+
+  # ---------------------------------------------------------------------------------------------
+  # REQUIRE_APPROVAL -- any match escalates to a human, even if no deny matched.
+  #
+  # This section is what makes the auto-vs-approval split a POLICY OUTPUT rather than a property
+  # hardcoded on each runbook. A runbook never decides whether it may run.
+  # ---------------------------------------------------------------------------------------------
+
+  - id: approve-not-promoted
+    effect: require_approval
+    # The promotion ladder becomes enforcement here rather than bookkeeping. A runbook that has not
+    # earned `auto` in this namespace always asks first.
+    expr: 'promotion.mode != "auto"'
+    message: >-
+      Approval required: this runbook has not yet earned unattended authority in this namespace.
+      Authority is earned per namespace, not granted globally.
+
+  - id: approve-large-blast-radius
+    effect: require_approval
+    expr: 'plan.blast_radius_score > 25'
+    message: >-
+      Approval required: the blast radius of this plan is above the automatic threshold. A human
+      should confirm the scope before it runs.
+
+  - id: approve-node-scoped
+    effect: require_approval
+    # Draining a node is partially irreversible -- pods get rescheduled and that side effect
+    # persists -- so it always asks, regardless of how well the runbook has performed.
+    expr: 'plan.target_kind == "Node"'
+    message: >-
+      Approval required: node-level actions move every pod on the node. Cordon is reversible;
+      the rescheduling is not.
+
+  - id: approve-costly
+    effect: require_approval
+    # Cost is a first-class approval criterion. "Automation with no budget" is how a self-healing
+    # system produces a surprise invoice.
+    expr: 'plan.cost_delta_inr_month > 500.0'
+    message: >-
+      Approval required: this plan increases projected spend beyond the automatic threshold.
+
+  - id: approve-low-confidence
+    effect: require_approval
+    expr: 'plan.confidence < 0.80'
+    message: >-
+      Approval required: the planner's confidence is below the automatic threshold. The confidence
+      number is graded in CI, so a low value here is meaningful rather than decorative.
+
+  - id: approve-partially-reversible
+    effect: require_approval
+    expr: 'plan.reversibility == "partially_reversible"'
+    message: >-
+      Approval required: this fix has side effects that persist after the undo, so it is not fully
+      reversible.
+
+  - id: approve-durable-change
+    effect: require_approval
+    # A durable change edits the declared state rather than the running state. That belongs in a
+    # pull request with a reviewer, not in an unattended patch.
+    expr: 'plan.durability == "durable"'
+    message: >-
+      Approval required: this is a durable change to declared state. The ephemeral mitigation can
+      be automatic; changing what git says should not be.
+
+  - id: approve-breaker-half-open
+    effect: require_approval
+    # Half-open lets exactly one plan through, and its outcome decides closed or open again. A
+    # human watching that single trial is the point.
+    expr: 'budget.breaker_state == "half_open"'
+    message: >-
+      Approval required: the breaker is half-open and this is the single trial plan. Its outcome
+      decides whether automation resumes.
+
+  - id: approve-budget-nearly-exhausted
+    effect: require_approval
+    expr: 'budget.max_actions > 0 && double(budget.used_actions) / double(budget.max_actions) >= 0.8'
+    message: >-
+      Approval required: this namespace has used most of its hourly remediation budget. The
+      remaining actions need a human in the loop.

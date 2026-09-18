@@ -1,0 +1,38 @@
+{
+  "receiver": "healops",
+  "status": "resolved",
+  "alerts": [
+    {
+      "status": "resolved",
+      "labels": {
+        "alertname": "KubePodCrashLooping",
+        "container": "crashy-api",
+        "namespace": "chaos",
+        "node": "healops-worker2",
+        "pod": "crashy-api-7d9f8b6c5d-x2p4q",
+        "reason": "CrashLoopBackOff",
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "Pod chaos/crashy-api-7d9f8b6c5d-x2p4q is crash looping"
+      },
+      "startsAt": "2026-08-22T02:14:07.891Z",
+      "endsAt": "2026-08-22T02:15:37.891Z",
+      "fingerprint": "8f4c1d2a9b3e7f60"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "KubePodCrashLooping",
+    "namespace": "chaos"
+  },
+  "commonLabels": {
+    "alertname": "KubePodCrashLooping",
+    "namespace": "chaos",
+    "severity": "critical"
+  },
+  "commonAnnotations": {},
+  "externalURL": "http://kps-alertmanager.monitoring:9093",
+  "version": "4",
+  "groupKey": "{}/{severity=~\"critical|warning\"}:{alertname=\"KubePodCrashLooping\", namespace=\"chaos\"}",
+  "truncatedAlerts": 0
+}

@@ -13,10 +13,10 @@ todos:
     status: completed
   - id: p2-engine-core
     content: "Phase 2: FastAPI 202-after-durable-enqueue webhook receiver, cause-first incident correlator, full PostgreSQL 18 schema via Alembic including the partitioned hash-chained audit_ledger with REVOKE UPDATE/DELETE, the ledger module with canonical JSON and verify_chain, and Redis Streams with split exec/verify consumer groups, DLQ, fenced locks, and Lease leader election"
-    status: in_progress
+    status: completed
   - id: p3-plan-policy
     content: "Phase 3: the frozen RemediationPlan object with blast radius and refusals, the CEL policy gate in policy/remediation.yaml, the five-member runbook contract in base.py, the orchestrator with every branch audited, and runbooks 1-3 with HPA-aware scaling and archive-then-delete disk cleanup"
-    status: pending
+    status: in_progress
   - id: p4-verify
     content: "Phase 4: closed-loop verifier requiring alert-cleared plus recovered golden signals plus no new alerts, the compensator and watchdog CronJob, Slack Bolt AsyncApp mounted on FastAPI with Block Kit builders, and approvals owned by PostgreSQL with an authoritative expires_at, a reaper, and fail-closed can_execute()"
     status: pending

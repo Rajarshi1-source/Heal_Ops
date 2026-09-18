@@ -145,7 +145,9 @@ def test_same_target_outside_the_window_opens_a_new_incident() -> None:
         opened_at=NOW,
         workload="api-gateway",
     )
-    later = correlate(crashloop_on("n1", "api-gateway-abc12-003"), [incident], NOW + timedelta(hours=1))
+    later = correlate(
+        crashloop_on("n1", "api-gateway-abc12-003"), [incident], NOW + timedelta(hours=1)
+    )
     assert later.action == "create"
 
 

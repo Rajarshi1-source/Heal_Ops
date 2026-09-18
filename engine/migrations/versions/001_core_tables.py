@@ -48,9 +48,7 @@ def upgrade() -> None:
         sa.Column("target_key", sa.Text(), nullable=False),
         sa.Column("namespace", sa.String(200), nullable=True),
         sa.Column("precedence", sa.Integer(), nullable=False, server_default="9"),
-        sa.Column(
-            "correlation_reason", sa.Text(), nullable=False, server_default="new_incident"
-        ),
+        sa.Column("correlation_reason", sa.Text(), nullable=False, server_default="new_incident"),
         sa.Column("alert_count", sa.Integer(), nullable=False, server_default="1"),
         sa.Column(
             "opened_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")
@@ -93,9 +91,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["incident_id"], ["incidents.id"], ondelete="SET NULL"),
         sa.CheckConstraint("role IN ('cause','symptom')", name="ck_alert_events_role"),
     )
-    op.create_index(
-        "ix_alert_events_fingerprint", "alert_events", ["fingerprint", "received_at"]
-    )
+    op.create_index("ix_alert_events_fingerprint", "alert_events", ["fingerprint", "received_at"])
     op.create_index(
         "ix_alert_events_ns_name", "alert_events", ["namespace", "alertname", "received_at"]
     )
@@ -146,9 +142,7 @@ def upgrade() -> None:
         sa.Column("slack_message_ts", sa.Text(), nullable=True),
         sa.Column("slack_channel", sa.Text(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(
-            ["execution_id"], ["runbook_executions.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["execution_id"], ["runbook_executions.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["incident_id"], ["incidents.id"]),
         sa.CheckConstraint(
             "status IN ('pending','approved','rejected','expired')", name="ck_approvals_status"

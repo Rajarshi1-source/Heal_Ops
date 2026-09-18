@@ -43,9 +43,7 @@ async def ensure_groups() -> None:
     client = get_client()
     for group in (settings.consumer_group_exec, settings.consumer_group_verify):
         try:
-            await client.xgroup_create(
-                settings.stream_name, group, id="0", mkstream=True
-            )
+            await client.xgroup_create(settings.stream_name, group, id="0", mkstream=True)
         except ResponseError as exc:
             if "BUSYGROUP" not in str(exc):
                 raise
@@ -81,9 +79,7 @@ def _parse(message_id: str, fields: dict[str, str], delivery_count: int) -> Queu
     )
 
 
-async def read(
-    group: str, consumer: str, count: int = 10, block_ms: int = 5000
-) -> list[QueuedJob]:
+async def read(group: str, consumer: str, count: int = 10, block_ms: int = 5000) -> list[QueuedJob]:
     """Read new messages for this consumer group."""
     settings = get_settings()
     response = await get_client().xreadgroup(

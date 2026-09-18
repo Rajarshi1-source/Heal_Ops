@@ -103,7 +103,9 @@ class Incident(Base):
     target_key: Mapped[str] = mapped_column(Text, nullable=False)
     namespace: Mapped[str | None] = mapped_column(String(200))
     precedence: Mapped[int] = mapped_column(Integer, nullable=False, server_default="9")
-    correlation_reason: Mapped[str] = mapped_column(Text, nullable=False, server_default="new_incident")
+    correlation_reason: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="new_incident"
+    )
     alert_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     opened_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=NOW
@@ -126,9 +128,7 @@ class RemediationPlanRow(Base):
     __tablename__ = "remediation_plans"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=UUIDV7)
-    incident_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("incidents.id"), nullable=False
-    )
+    incident_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("incidents.id"), nullable=False)
     runbook: Mapped[str] = mapped_column(Text, nullable=False)
     planner_version: Mapped[str] = mapped_column(Text, nullable=False, server_default="0")
     target_kind: Mapped[str] = mapped_column(Text, nullable=False)
@@ -179,9 +179,7 @@ class RunbookExecution(Base):
     __tablename__ = "runbook_executions"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    incident_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("incidents.id"), nullable=False
-    )
+    incident_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("incidents.id"), nullable=False)
     plan_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("remediation_plans.id")
     )
@@ -228,9 +226,7 @@ class Approval(Base):
     execution_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("runbook_executions.id", ondelete="CASCADE"), nullable=False
     )
-    incident_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("incidents.id"), nullable=False
-    )
+    incident_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("incidents.id"), nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
     requested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=NOW
