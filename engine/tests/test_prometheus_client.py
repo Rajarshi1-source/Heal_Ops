@@ -281,3 +281,22 @@ async def test_the_pod_prefix_does_not_match_a_longer_workload_name() -> None:
     route = respx.get(QUERY_URL).mock(return_value=httpx.Response(200, json=result("0")))
     await prom.golden_signals("shop", workload="api")
     assert 'pod=~"api-.*"' in route.calls[0].request.url.params["query"]
+
+
+@respx.mock
+async def test_memory_peak_is_returned_in_mib() -> None:
+    route = respx.get(QUERY_URL).mock(
+        return_value=httpx.Response(200, json=result(str(700 * 1024 * 1024)))
+    )
+    assert await prom.memory_peak_mib("chaos", "hungry-worker", "worker") == 700.0
+    query = route.calls[0].request.url.params["query"]
+    assert "max_over_time(container_memory_working_set_bytes" in query
+    assert 'container="worker"' in query
+
+
+@respx.mock
+async def test_an_unobserved_peak_is_none_not_zero() -> None:
+    respx.get(QUERY_URL).mock(
+        return_value=httpx.Response(200, json={"status": "success", "data": {"result": []}})
+    )
+    assert await prom.memory_peak_mib("chaos", "hungry-worker", "worker") is None

@@ -82,6 +82,17 @@ def policy_v1() -> k8s_client.PolicyV1Api:
     return k8s_client.PolicyV1Api(api_client())
 
 
+def _count_failure(verb: str, exc: ApiException) -> None:
+    """Count server-side failures only -- the breaker trips on this rate.
+
+    A 404 for a Lease that does not exist yet, or a 409 on an optimistic-concurrency conflict, is
+    the API server working correctly. Counting those would let routine lookups trip the breaker and
+    halt automation on a perfectly healthy cluster.
+    """
+    if exc.status is None or exc.status >= 500 or exc.status == 429:
+        metrics.k8s_api_errors.labels(verb=verb).inc()
+
+
 async def call(verb: str, fn: Any, /, *args: Any, **kwargs: Any) -> Any:
     """Run a blocking client call in a worker thread with a hard timeout.
 
@@ -102,8 +113,8 @@ async def call(verb: str, fn: Any, /, *args: Any, **kwargs: Any) -> Any:
         raise KubernetesUnavailable(
             f"{verb} timed out after {settings.k8s_timeout_seconds}s"
         ) from exc
-    except ApiException:
-        metrics.k8s_api_errors.labels(verb=verb).inc()
+    except ApiException as exc:
+        _count_failure(verb, exc)
         raise
 
 
@@ -140,8 +151,8 @@ async def call_api(
     except TimeoutError as exc:
         metrics.k8s_api_errors.labels(verb=verb).inc()
         raise KubernetesUnavailable(f"{verb} timed out") from exc
-    except ApiException:
-        metrics.k8s_api_errors.labels(verb=verb).inc()
+    except ApiException as exc:
+        _count_failure(verb, exc)
         raise
     return response[0] if isinstance(response, tuple) else response
 

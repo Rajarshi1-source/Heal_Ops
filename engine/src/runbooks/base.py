@@ -68,6 +68,9 @@ class SignalWindow:
     psi_full: float | None = None
     memory_usage_ratio: float | None = None
     new_alerts: tuple[str, ...] = ()
+    custom: dict[str, float | None] = field(default_factory=dict)
+    """The plan's own `expected_signal.queries`, by name -- the recovery criterion it committed to
+    before acting, judged against its own thresholds."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -78,6 +81,7 @@ class SignalWindow:
             "psi_full": self.psi_full,
             "memory_usage_ratio": self.memory_usage_ratio,
             "new_alerts": list(self.new_alerts),
+            "custom": dict(self.custom),
         }
 
     @classmethod
@@ -99,6 +103,10 @@ class SignalWindow:
             psi_full=_float("psi_full"),
             memory_usage_ratio=_float("memory_usage_ratio"),
             new_alerts=tuple(str(a) for a in raw.get("new_alerts") or ()),
+            custom={
+                str(k): float(v) if v is not None else None
+                for k, v in (raw.get("custom") or {}).items()
+            },
         )
 
 

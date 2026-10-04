@@ -22,6 +22,12 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
+#: A server found unreachable once is skipped for the rest of the session. Re-probing per test cost
+#: a refused connection each -- seconds apiece on Windows -- and turned a missing container into a
+#: suite that looked hung.
+_unreachable: dict[str, str] = {}
+
+
 @pytest_asyncio.fixture
 async def db_session() -> AsyncIterator[AsyncSession]:
     """A session against the test database, rolled back afterwards.
@@ -30,13 +36,16 @@ async def db_session() -> AsyncIterator[AsyncSession]:
     inside a transaction that is rolled back, and the advisory lock the ledger takes is
     transaction-scoped so it is released with it.
     """
+    if "postgres" in _unreachable:
+        pytest.skip(_unreachable["postgres"])
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=None)
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
     except Exception as exc:  # noqa: BLE001
         await engine.dispose()
-        pytest.skip(f"PostgreSQL not reachable at {TEST_DATABASE_URL}: {exc}")
+        _unreachable["postgres"] = f"PostgreSQL not reachable at {TEST_DATABASE_URL}: {exc}"
+        pytest.skip(_unreachable["postgres"])
 
     # Mirror the production sessionmaker exactly, `autoflush=False` included. With autoflush on,
     # a module that forgets to flush its own writes still passes its tests and then misbehaves in
@@ -67,12 +76,15 @@ async def redis_client_fixture() -> AsyncIterator[Any]:
 
     from cache import redis_client as module
 
+    if "redis" in _unreachable:
+        pytest.skip(_unreachable["redis"])
     client = aioredis.from_url(TEST_REDIS_URL, decode_responses=True)
     try:
         await client.ping()
     except Exception as exc:  # noqa: BLE001
         await client.aclose()
-        pytest.skip(f"Redis/Valkey not reachable at {TEST_REDIS_URL}: {exc}")
+        _unreachable["redis"] = f"Redis/Valkey not reachable at {TEST_REDIS_URL}: {exc}"
+        pytest.skip(_unreachable["redis"])
 
     await client.flushdb()
 

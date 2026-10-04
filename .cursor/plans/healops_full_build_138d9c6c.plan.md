@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: p5-runbooks45
     content: "Phase 5: runbook 4 via the pods/resize subresource with success asserted on containerStatuses and refusals for RestartContainer/ceiling/Infeasible, runbook 5 cordon+drain with capacity precheck and PDB awareness, the token-bucket remediation budget, the global circuit breaker with half-open recovery, and the anti-masking guard that files GitHub issues"
-    status: pending
+    status: completed
   - id: p6-gitops-promotion-dashboard
     content: "Phase 6: gitops.py classification with ephemeral TTLs and narrowly-scoped reconciliation pauses, durable PRs opened only after verification passes, the promotion ladder with one-strike demotion wired into the policy gate, and the Next.js 16.3 dashboard with the horizontal state trail, KPI cards, JsonDiff, and StatusBadge discriminated union"
     status: pending

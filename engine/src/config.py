@@ -127,6 +127,15 @@ class Settings(BaseSettings):
     # --- budget and breaker --------------------------------------------------
     budget_window_seconds: int = 3600
     budget_global_max: int = 20
+    budget_namespace_max: dict[str, int] = Field(
+        default_factory=lambda: {"payments": 3, "shop": 8, "chaos": 50}
+    )
+    """Actions per rolling hour, per namespace. Tighter where a mistake costs more."""
+    budget_default_namespace_max: int = 5
+    breaker_k8s_error_window_seconds: int = 300
+    breaker_k8s_min_calls: int = 20
+    """Below this many calls in the window an error *rate* is noise -- two failures out of three
+    calls is not a sick API server."""
     breaker_compensation_threshold: int = 3
     breaker_compensation_window_seconds: int = 900
     breaker_consecutive_failure_threshold: int = 2

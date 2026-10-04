@@ -277,6 +277,45 @@ def test_node_actions_always_require_approval(live_policy: Policy) -> None:
     assert "approve-node-scoped" in decision.reasons
 
 
+def test_a_real_node_target_reaches_approval_instead_of_a_deny(live_policy: Policy) -> None:
+    """Regression: a node has no namespace and no replica count.
+
+    The test above gives its node a namespace and three replicas, which a real node never has, and
+    that hid the bug: as built, the namespace allow-list read the empty namespace as "not allowed"
+    and denied every node-scoped plan -- disk cleanup and node drain could never run.
+    """
+    decision = decide(
+        p=plan(
+            runbook="node_drain",
+            target_kind="Node",
+            target_name="worker-2",
+            target_namespace=None,
+            reversibility=Reversibility.PARTIAL,
+            blast_radius=BlastRadius(pods=4, nodes=1, namespaces=("chaos", "kube-system")),
+        ),
+        t=target(kind="Node", name="worker-2", namespace=None, replicas=1),
+        pol=live_policy,
+    )
+    assert decision.effect == "require_approval", decision.reasons
+    assert "approve-node-scoped" in decision.reasons
+
+
+def test_a_node_running_healops_is_never_drained(live_policy: Policy) -> None:
+    decision = decide(
+        p=plan(
+            target_kind="Node",
+            target_name="worker-1",
+            target_namespace=None,
+            reversibility=Reversibility.PARTIAL,
+            blast_radius=BlastRadius(pods=3, nodes=1, namespaces=("healops", "shop")),
+        ),
+        t=target(kind="Node", name="worker-1", namespace=None, replicas=1),
+        pol=live_policy,
+    )
+    assert decision.effect == "deny"
+    assert "deny-self-remediation" in decision.reasons
+
+
 def test_large_blast_radius_requires_approval(live_policy: Policy) -> None:
     decision = decide(p=plan(blast_radius=BlastRadius(pods=6, nodes=2)), pol=live_policy)
     assert "approve-large-blast-radius" in decision.reasons

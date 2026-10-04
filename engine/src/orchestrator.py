@@ -29,9 +29,12 @@ from typing import Any, Literal, assert_never
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import breaker
+import budget
 import ledger
 import metrics
 import policy as policy_module
+import recurrence
 from bundle import IncidentBundle, Target
 from cache import locks
 from config import get_settings
@@ -44,6 +47,11 @@ from policy import BudgetSnapshot, PolicyDecision, PromotionSnapshot, TargetView
 from runbooks.base import Runbook, SignalWindow
 
 log = structlog.get_logger(__name__)
+
+
+class NotAdmitted(RuntimeError):
+    """The breaker or the budget refused at the moment of acting. Handled like a held lock."""
+
 
 ObserveFn = Callable[[RemediationPlan], Awaitable[SignalWindow]]
 """Reads the target's signals immediately before acting. Injected so the orchestrator stays
@@ -64,6 +72,8 @@ class HandleResult:
     execution_id: int | None = None
     plan_id: str | None = None
     detail: str = ""
+    masking: recurrence.MaskingEvent | None = None
+    """Set when this execution tripped the anti-masking guard; the worker files the issue."""
 
     @property
     def acted(self) -> bool:
@@ -280,6 +290,10 @@ async def execute_approved(
             token=plan_id,
             ttl_seconds=settings.lock_ttl_seconds,
         ):
+            # Re-checked here, not only at the gate: an approval can sit for ten minutes, and the
+            # breaker may have tripped or the budget run out since the plan was made.
+            await _admit(session, plan, plan_id)
+
             # Persisted BEFORE the action. This is the saga's compensating transaction, and it is
             # already durable by the time anything changes in the cluster.
             await _register_compensation(session, execution, plan)
@@ -304,9 +318,13 @@ async def execute_approved(
                 incident_id=incident.id,
                 execution_id=execution.id,
             )
-    except locks.LockNotAcquired as exc:
-        # Another plan holds this resource. Not an error: the other incident is probably fixing the
-        # same thing, and forcing our way in is how two runbooks produce an unpredictable state.
+            # An attempt spends budget whether or not it applied: a half-applied change is still a
+            # change to production.
+            await budget.consume(session, plan.target_namespace)
+    except (locks.LockNotAcquired, NotAdmitted) as exc:
+        # Another plan holds this resource, or the breaker/budget said no. Not an error: forcing
+        # our way in is how two runbooks produce an unpredictable state, and acting past an open
+        # breaker is how automation drives into an outage.
         execution.status = "blocked"
         await ledger.append(
             session,
@@ -341,6 +359,7 @@ async def execute_approved(
         ).value
         incident.outcome = "escalated"
         metrics.incidents_total.labels(outcome="escalated").inc()
+        await breaker.record_outcome(session, plan_id, success=False)
         log.warning("execution failed", runbook=runbook.name, detail=result.detail)
         return HandleResult(
             outcome="execute_failed",
@@ -356,6 +375,10 @@ async def execute_approved(
     incident.state = assert_transition(incident.id, incident.state, IncidentState.VERIFYING).value
     await session.flush()
 
+    # Counted on every application, whatever verification later says: fixing the same thing four
+    # times a week is the problem whether or not each fix held.
+    masking = await recurrence.record(session, plan, incident)
+
     log.info(
         "executed, awaiting verification",
         runbook=runbook.name,
@@ -369,7 +392,20 @@ async def execute_approved(
         execution_id=execution.id,
         plan_id=plan_id,
         detail=result.detail,
+        masking=masking,
     )
+
+
+async def _admit(session: AsyncSession, plan: RemediationPlan, plan_id: str) -> None:
+    allowed, why = await breaker.admit(session, plan_id)
+    if not allowed:
+        raise NotAdmitted(why)
+    exhausted = await budget.has_room(session, plan.target_namespace)
+    if exhausted is not None:
+        raise NotAdmitted(
+            f"remediation budget {exhausted.scope} exhausted "
+            f"({exhausted.used}/{exhausted.max_actions} this hour) -- escalating instead"
+        )
 
 
 # --- helpers -------------------------------------------------------------------------------------

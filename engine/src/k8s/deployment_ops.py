@@ -102,6 +102,13 @@ async def rollback_to(namespace: str, name: str, template: Any, resource_version
         raise
 
 
+async def patch(namespace: str, name: str, body: dict[str, Any]) -> Any:
+    """Strategic-merge patch of a Deployment. Used only by the pre-1.35 template fallback."""
+    return await call(
+        "patch_deployment", apps_v1().patch_namespaced_deployment, name, namespace, body
+    )
+
+
 async def scale(
     namespace: str, name: str, replicas: int, resource_version: str | None = None
 ) -> Any:

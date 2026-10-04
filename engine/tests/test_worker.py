@@ -527,3 +527,130 @@ async def test_a_failing_tick_does_not_kill_the_loop(monkeypatch: pytest.MonkeyP
     await asyncio.gather(task, return_exceptions=True)
 
     assert calls >= 3
+
+
+# --- bounded automation, end to end ---------------------------------------------------------------
+
+
+async def test_an_exhausted_budget_is_denied_at_the_gate(
+    db_session: AsyncSession, wired: dict[str, Any]
+) -> None:
+    import budget
+
+    await promote(db_session, "auto")
+    for _ in range(8):  # ns:shop allows 8 per rolling hour
+        await budget.consume(db_session, "shop")
+    incident = await make_incident(db_session)
+
+    result = await worker.plan_incident(incident.id, target_builder=target_builder)
+
+    assert result is not None and result.outcome == "denied"
+    assert result.decision is not None and "deny-budget-exhausted" in result.decision.reasons
+    assert wired["runbook"].execute_calls == 0
+
+
+async def test_an_open_breaker_blocks_an_approved_execution_at_the_moment_of_acting(
+    db_session: AsyncSession, wired: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The human approved ten minutes ago; the breaker tripped since. It must not act."""
+    import breaker
+
+    monkeypatch.setattr(approval_manager.approval_store, "mirror", Recorder())
+    incident, execution = await awaiting_approval(db_session)
+    await approval_manager.resolve(db_session, execution, approved=True, decided_by="U1")
+    await breaker.trip(db_session, "4 compensations in 15 minutes")
+
+    result = await worker.execute_approved_job(execution.id, observe=Observer())
+
+    assert result is not None and result.outcome == "blocked"
+    assert "breaker open" in result.detail
+    assert wired["runbook"].execute_calls == 0
+    assert incident.state == IncidentState.ESCALATED.value
+
+
+async def test_a_half_open_trial_is_settled_by_its_verdict(
+    db_session: AsyncSession, wired: dict[str, Any]
+) -> None:
+    import breaker
+    from db.models import RemediationBudget
+
+    _, execution, _ = await make_execution(db_session, finished_ago_seconds=400)
+    await breaker.trip(db_session, "testing")
+    row = await db_session.get(RemediationBudget, "global")
+    assert row is not None
+    row.breaker_until = await db_now(db_session) - timedelta(seconds=1)
+    await db_session.flush()
+    assert execution.plan_id is not None
+    assert (await breaker.admit(db_session, execution.plan_id))[0]
+
+    await worker.verification_pass(observe=Observer(healthy_window()))
+
+    assert (await breaker.view(db_session)).state == "closed"
+
+
+async def test_the_fourth_fix_files_the_masking_issue(
+    db_session: AsyncSession, wired: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from integrations import github_client
+
+    filed: list[tuple[str, list[str]]] = []
+
+    async def create_issue(title: str, body: str, labels: list[str]) -> str:
+        filed.append((title, labels))
+        return "https://github.com/o/r/issues/9"
+
+    masked = Recorder()
+    monkeypatch.setattr(github_client, "create_issue", create_issue)
+    monkeypatch.setattr(worker.notifier, "masking", masked)
+    await promote(db_session, "auto")
+
+    results = []
+    for _ in range(4):
+        incident = await make_incident(db_session)
+        results.append(
+            await worker.plan_incident(
+                incident.id, target_builder=target_builder, observe=Observer()
+            )
+        )
+
+    assert [r.masking is not None for r in results if r] == [False, False, False, True]
+    assert filed and "needs-root-cause" in filed[0][1]
+    assert masked.calls[0][0][1] == "https://github.com/o/r/issues/9"
+    promotion = await db_session.get(RunbookPromotion, ("scripted_runbook", "shop"))
+    assert promotion is not None and promotion.mode == "approval", "it stops fixing unattended"
+
+
+async def test_oom_targets_are_sized_from_the_observed_peak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bundle import ContainerState
+    from integrations import prometheus_client
+    from k8s import state_capture
+
+    async def deployment(namespace: str, name: str) -> Any:
+        return make_target(containers=(ContainerState(name="worker", image="i"),))
+
+    async def peak(namespace: str, workload: str, container: str) -> float:
+        return 640.0
+
+    monkeypatch.setattr(state_capture, "build_target_for_deployment", deployment)
+    monkeypatch.setattr(prometheus_client, "memory_peak_mib", peak)
+    oom = Incident(
+        cause_scope="workload",
+        cause_target="api",
+        namespace="shop",
+        cause_alertname="KubePodOOMKilled",
+        target_key="shop/Deployment/api",
+    )
+
+    target = await worker.build_target(oom)
+    assert target.containers[0].memory_peak_mib == 640.0
+
+    other = Incident(
+        cause_scope="workload",
+        cause_target="api",
+        namespace="shop",
+        cause_alertname="KubePodCrashLooping",
+        target_key="shop/Deployment/api",
+    )
+    assert (await worker.build_target(other)).containers[0].memory_peak_mib is None

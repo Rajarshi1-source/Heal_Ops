@@ -41,14 +41,21 @@ rules:
     # HealOps never remediates HealOps. A system that can restart itself mid-decision can lose the
     # incident it was handling. This rule lives here, in the policy file, and not in code -- which
     # is the whole point of policy-as-code.
-    expr: 'plan.target_namespace == "healops"'
+    #
+    # The second clause covers node-scoped plans: draining a node that hosts an engine replica
+    # evicts HealOps as surely as targeting its namespace would.
+    expr: 'plan.target_namespace == "healops" || "healops" in plan.blast_radius.namespaces'
     message: >-
-      Denied: HealOps does not remediate its own namespace. Restarting the engine mid-decision
-      would lose the incident it is handling.
+      Denied: HealOps does not remediate its own namespace, or a node running its pods. Restarting
+      the engine mid-decision would lose the incident it is handling.
 
   - id: deny-outside-allowed-namespaces
     effect: deny
-    expr: '!(plan.target_namespace in ["shop", "payments", "default", "chaos"])'
+    # Nodes have no namespace, so this rule cannot apply to them -- without the kind guard every
+    # node-scoped plan read as "namespace ''" and was denied, which silently disabled disk cleanup
+    # and node drain. Node plans are gated instead by approve-node-scoped (always a human) and by
+    # deny-self-remediation (never a node running HealOps).
+    expr: 'plan.target_kind != "Node" && !(plan.target_namespace in ["shop", "payments", "default", "chaos"])'
     message: >-
       Denied: this namespace is not in the allow-list. Automation is opt-in per namespace, so a new
       namespace gets no automation until someone adds it here.
@@ -79,8 +86,8 @@ rules:
     effect: deny
     # One replica means there is no safe blast radius: any disruption is a full outage of that
     # workload. Reversible actions are still allowed, because scaling up or resizing does not
-    # take the single replica down.
-    expr: 'target.replicas < 2 && plan.reversibility != "reversible"'
+    # take the single replica down. Replica count is a workload property; a node has none.
+    expr: 'plan.target_kind != "Node" && target.replicas < 2 && plan.reversibility != "reversible"'
     message: >-
       Denied: this workload runs a single replica, so a disruptive fix is a full outage. Scale it
       up or accept manual handling.

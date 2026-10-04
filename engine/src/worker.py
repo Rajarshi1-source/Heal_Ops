@@ -33,11 +33,14 @@ from kubernetes.client.rest import ApiException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import breaker
+import budget
 import compensator
 import ledger
 import notifier
 import orchestrator
 import plan_store
+import recurrence
 import verifier
 from bundle import BundleAlert, IncidentBundle, Target
 from cache import streams
@@ -57,7 +60,7 @@ from db.models import (
 )
 from orchestrator import HandleResult
 from plan import RemediationPlan
-from policy import BudgetSnapshot, PromotionSnapshot
+from policy import PromotionSnapshot
 from runbooks import load_all
 from runbooks.base import SignalWindow
 
@@ -88,7 +91,7 @@ async def build_target(incident: Incident) -> Target:
             return await state_capture.build_target_for_node(incident.cause_target)
         if not incident.namespace:
             raise UnplannableIncident(f"{incident.target_key} has no namespace to look it up in")
-        return await state_capture.build_target_for_deployment(
+        target = await state_capture.build_target_for_deployment(
             incident.namespace, incident.cause_target
         )
     except ApiException as exc:
@@ -99,6 +102,27 @@ async def build_target(incident: Incident) -> Target:
                 f"{incident.target_key} not found in the cluster ({exc.reason})"
             ) from exc
         raise
+
+    if incident.cause_alertname == "KubePodOOMKilled":
+        target = await _with_memory_peaks(target)
+    return target
+
+
+async def _with_memory_peaks(target: Target) -> Target:
+    """Attach each container's observed peak, so the bump is sized from evidence."""
+    from dataclasses import replace
+
+    from integrations import prometheus_client
+
+    if not target.namespace:
+        return target
+    containers = []
+    for container in target.containers:
+        peak = await prometheus_client.memory_peak_mib(
+            target.namespace, target.name, container.name
+        )
+        containers.append(replace(container, memory_peak_mib=peak))
+    return replace(target, containers=tuple(containers))
 
 
 async def plan_incident(
@@ -142,9 +166,11 @@ async def plan_incident(
             await _bundle(session, incident, target),
             runbook,
             target,
-            # The token-bucket budget and breaker arrive in Phase 5; until then the gate sees a
-            # closed breaker and an empty bucket, and every other rule still applies.
-            budget=BudgetSnapshot(),
+            budget=await budget.snapshot(
+                session,
+                target.namespace,
+                breaker_state=(await breaker.view(session)).for_policy(),
+            ),
             promotion=await _promotion(session, runbook.name, target.namespace),
             observe_before=observe,
         )
@@ -246,6 +272,18 @@ async def _after_commit(result: HandleResult, *, expires_at: str | None = None) 
                 approval.slack_channel = posted.channel
     if result.outcome == "executed" and result.execution_id is not None:
         await streams.enqueue("verify", {"execution_id": result.execution_id})
+    if result.masking is not None:
+        await file_masking_issue(result.masking)
+
+
+async def file_masking_issue(event: recurrence.MaskingEvent) -> None:
+    """The guard already demoted the runbook in the committed transaction; this files the bug."""
+    from integrations import github_client
+
+    url = await github_client.create_issue(event.title, event.body, recurrence.LABELS)
+    async with transaction() as session:
+        await recurrence.attach_issue(session, event, url)
+    await notifier.masking(event, url)
 
 
 async def _bundle(session: AsyncSession, incident: Incident, target: Target) -> IncidentBundle:
@@ -406,6 +444,11 @@ async def conclude(execution_id: int, plan: RemediationPlan, verdict: verifier.V
         outcome = await compensator.on_verification(
             session, incident, execution, plan, runbook, verdict
         )
+        # A half-open trial is decided by its verdict; any verdict may complete a trip condition.
+        await breaker.record_outcome(
+            session, execution.plan_id, success=verdict.outcome == "remediated"
+        )
+        await breaker.evaluate(session)
 
     await notifier.verified(plan, verdict, outcome, execution_id=execution_id)
     return True
@@ -541,3 +584,7 @@ class Worker:
 
     async def reap_tick(self) -> None:
         await reap_pass()
+        # The breaker also watches evidence written by other processes -- watchdog compensations,
+        # and the API error rate -- so it is evaluated on a clock, not only after a verdict.
+        async with transaction() as session:
+            await breaker.evaluate(session)

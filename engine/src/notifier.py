@@ -24,6 +24,7 @@ from plan import RemediationPlan
 if TYPE_CHECKING:
     from compensator import CompensationOutcome
     from orchestrator import HandleResult
+    from recurrence import MaskingEvent
     from verifier import Verdict
 
 log = structlog.get_logger(__name__)
@@ -120,3 +121,15 @@ async def approval_expired(
             await slack_client.post(blocks)
     except Exception as exc:  # noqa: BLE001
         log.warning("approval expiry notification failed", error=str(exc))
+
+
+async def masking(event: MaskingEvent, issue_url: str | None) -> None:
+    """The anti-masking guard fired: the runbook was demoted and a bug was filed against it."""
+    try:
+        await slack_client.post(
+            slack_messages.masking_guard_warning(
+                event.runbook, event.target_key, event.occurrences, issue_url
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("masking notification failed", error=str(exc))

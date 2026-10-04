@@ -145,6 +145,7 @@ class DiskCleanup(Runbook):
             },
         )
 
+        root = f'{{node="{target.name}",mountpoint="/"}}'
         return RemediationPlan(
             runbook=self.name,
             incident_id=bundle.incident_id,
@@ -162,10 +163,12 @@ class DiskCleanup(Runbook):
             blast_radius=BlastRadius(pods=0, nodes=1, namespaces=(), user_facing=False),
             expected_signal=ExpectedSignal(
                 alert_should_clear="NodeDiskPressure",
+                # Scoped to this node: the verifier enforces committed thresholds, and an unscoped
+                # max would let a different full node fail this node's cleanup.
                 queries={
                     "disk_used_ratio": (
-                        'max(1 - (node_filesystem_avail_bytes{mountpoint="/"} / '
-                        'node_filesystem_size_bytes{mountpoint="/"}))'
+                        f"max(1 - (node_filesystem_avail_bytes{root}"
+                        f" / node_filesystem_size_bytes{root}))"
                     )
                 },
                 thresholds={"disk_used_ratio": 0.80},

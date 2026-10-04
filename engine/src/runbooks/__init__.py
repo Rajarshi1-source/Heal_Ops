@@ -27,6 +27,12 @@ def load_all() -> RunbookRegistry:
     Idempotent: registration happens at module import, and Python caches modules, so calling this
     twice does not attempt a duplicate registration.
     """
-    from runbooks import cpu_scale_up, crashloop_rollback, disk_cleanup  # noqa: F401
+    from runbooks import (  # noqa: F401
+        cpu_scale_up,
+        crashloop_rollback,
+        disk_cleanup,
+        node_drain,
+        oom_memory_bump,
+    )
 
     return registry

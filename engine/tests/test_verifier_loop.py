@@ -114,15 +114,16 @@ async def test_observe_scopes_every_probe_to_the_workload(probes: dict[str, list
 
     assert window.restarts == 2 and window.alert_firing is False
     assert window.new_alerts == ("KubePodCrashLooping",)
-    assert probes["prom"] == [("shop", {"workload": "api", "window": "60s"})]
+    assert probes["prom"] == [("shop", {"workload": "api", "window": "60s", "pod": None})]
     assert probes["firing"][0][1]["workload"] == "api"
-    assert probes["target"][0][1] == {"node": None, "workload": "api"}
+    assert probes["target"][0][1] == {"pod": None, "node": None, "workload": "api"}
 
 
 async def test_observe_scopes_a_node_target_by_node(probes: dict[str, list[Any]]) -> None:
     await verifier.observe(make_plan(target_kind="Node", target_name="worker-2"))
-    assert probes["prom"][0][1]["workload"] is None
-    assert probes["target"][0][1] == {"node": "worker-2", "workload": None}
+    # Workload golden signals would be read cluster-wide for a node, so they are not read at all.
+    assert probes["prom"] == []
+    assert probes["target"][0][1] == {"pod": None, "node": "worker-2", "workload": None}
 
 
 async def test_observe_makes_no_alert_claim_without_an_expected_signal(
@@ -199,3 +200,85 @@ async def test_a_durable_plan_without_signal_round_trips(db_session: AsyncSessio
     rebuilt = plan_store.rehydrate(row)
     assert rebuilt.expected_signal is None
     assert rebuilt.durability is Durability.DURABLE
+
+
+# --- the plan's own committed recovery criterion --------------------------------------------------
+
+
+def drain_plan() -> Any:
+    from plan import ExpectedSignal
+
+    return make_plan(
+        target_kind="Node",
+        target_name="worker-3",
+        target_namespace=None,
+        expected_signal=ExpectedSignal(
+            alert_should_clear="",
+            queries={"pods_left_on_node": "q1", "unavailable_replicas": "q2"},
+            thresholds={"pods_left_on_node": 0.0, "unavailable_replicas": 0.0},
+        ),
+    )
+
+
+def node_window(**custom: float | None) -> SignalWindow:
+    return SignalWindow(new_alerts=("KubeNodeNotReady",), custom=dict(custom))
+
+
+NODE_BEFORE = SignalWindow(new_alerts=("KubeNodeNotReady",))
+
+
+def test_a_plan_that_promised_no_alert_is_judged_on_its_own_checks() -> None:
+    """A drain does not make the node Ready; the still-firing NotReady alert is not a failure."""
+    verdict = verifier.judge(
+        drain_plan(), NODE_BEFORE, node_window(pods_left_on_node=0.0, unavailable_replicas=0.0)
+    )
+    assert verdict.outcome == "remediated"
+    assert verdict.alert_cleared is None, "not applicable must not read as 'did not clear'"
+
+
+def test_a_committed_threshold_breached_is_a_failure() -> None:
+    verdict = verifier.judge(
+        drain_plan(), NODE_BEFORE, node_window(pods_left_on_node=2.0, unavailable_replicas=0.0)
+    )
+    assert verdict.outcome == "not_recovered"
+    assert any("pods_left_on_node is 2" in r for r in verdict.reasons)
+
+
+def test_a_committed_check_that_cannot_be_read_is_inconclusive() -> None:
+    """The plan promised this criterion. Unreadable is unproven, never passed."""
+    verdict = verifier.judge(
+        drain_plan(), NODE_BEFORE, node_window(pods_left_on_node=0.0, unavailable_replicas=None)
+    )
+    assert verdict.outcome == "inconclusive"
+    assert "unavailable_replicas" in verdict.reasons[0]
+
+
+def test_committed_values_are_recorded_with_the_verdict() -> None:
+    verdict = verifier.judge(
+        drain_plan(), NODE_BEFORE, node_window(pods_left_on_node=0.0, unavailable_replicas=0.0)
+    )
+    assert verdict.signals_after["custom:pods_left_on_node"] == 0.0
+
+
+async def test_observe_evaluates_the_committed_queries(
+    probes: dict[str, list[Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def thresholds(queries: dict[str, str]) -> dict[str, float | None]:
+        return dict.fromkeys(queries, 0.0)
+
+    monkeypatch.setattr(verifier.prometheus_client, "query_thresholds", thresholds)
+    window = await verifier.observe(drain_plan())
+    assert window.custom == {"pods_left_on_node": 0.0, "unavailable_replicas": 0.0}
+    assert window.alert_firing is None
+
+
+async def test_a_pod_plan_is_judged_on_that_pod_alone(probes: dict[str, list[Any]]) -> None:
+    await verifier.observe(make_plan(target_kind="Pod", target_name="api-7d-abc"))
+    assert probes["prom"][0][1]["pod"] == "api-7d-abc"
+    assert probes["prom"][0][1]["workload"] is None
+    assert probes["target"][0][1]["pod"] == "api-7d-abc"
+
+
+def test_custom_signals_round_trip() -> None:
+    window = node_window(pods_left_on_node=0.0, unavailable_replicas=None)
+    assert SignalWindow.from_dict(window.to_dict()) == window

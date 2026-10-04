@@ -14,6 +14,7 @@ Two consumers with different needs:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import structlog
@@ -298,18 +299,32 @@ async def build_target_for_node(name: str) -> Target:
             allocatable_memory_mib=memory_to_mib(allocatable.get("memory")) or 0,
         )
 
-    pods = await call(
-        "list_pods_on_node",
-        core_v1().list_pod_for_all_namespaces,
-        field_selector=f"spec.nodeName={name}",
-    )
-    requested_cpu = 0
-    requested_memory = 0
+    # Every pod in the cluster, once: the precheck needs what is already requested on the PEERS, not
+    # only on this node, or their free capacity is overstated by everything already running there.
+    pods = await call("list_pods", core_v1().list_pod_for_all_namespaces)
+    requested: dict[str, tuple[int, int]] = {}
+    drainable: list[str] = []
     for pod in pods.items:
-        for container in pod.spec.containers:
-            requests = (container.resources.requests or {}) if container.resources else {}
-            requested_cpu += cpu_to_millis(requests.get("cpu")) or 0
-            requested_memory += memory_to_mib(requests.get("memory")) or 0
+        node_name = pod.spec.node_name
+        if not node_name or not _occupies_node(pod):
+            continue
+        cpu, memory = _pod_requests(pod)
+        prior_cpu, prior_memory = requested.get(node_name, (0, 0))
+        requested[node_name] = (prior_cpu + cpu, prior_memory + memory)
+        if node_name == name and _moves_on_drain(pod):
+            drainable.append(f"{pod.metadata.namespace}/{pod.metadata.name}")
+
+    def with_requests(state: NodeState) -> NodeState:
+        cpu, memory = requested.get(state.name, (0, 0))
+        return replace(state, requested_cpu_millis=cpu, requested_memory_mib=memory)
+
+    # This node's requests count only what a drain would move: DaemonSet and mirror pods stay.
+    moved_cpu = moved_memory = 0
+    for pod in pods.items:
+        if pod.spec.node_name == name and _occupies_node(pod) and _moves_on_drain(pod):
+            cpu, memory = _pod_requests(pod)
+            moved_cpu += cpu
+            moved_memory += memory
 
     state = to_state(node)
     return Target(
@@ -319,20 +334,38 @@ async def build_target_for_node(name: str) -> Target:
         labels=dict(node.metadata.labels or {}),
         annotations=dict(node.metadata.annotations or {}),
         node=name,
-        node_state=NodeState(
-            name=state.name,
-            ready=state.ready,
-            schedulable=state.schedulable,
-            allocatable_cpu_millis=state.allocatable_cpu_millis,
-            allocatable_memory_mib=state.allocatable_memory_mib,
-            requested_cpu_millis=requested_cpu,
-            requested_memory_mib=requested_memory,
-            pod_count=len(pods.items),
+        pods=tuple(sorted(drainable)),
+        node_state=replace(
+            state,
+            requested_cpu_millis=moved_cpu,
+            requested_memory_mib=moved_memory,
+            pod_count=len(drainable),
         ),
         peer_nodes=tuple(
-            to_state(n)
+            with_requests(to_state(n))
             for n in all_nodes.items
             if n.metadata.name != name
             and "node-role.kubernetes.io/control-plane" not in (n.metadata.labels or {})
         ),
     )
+
+
+def _occupies_node(pod: Any) -> bool:
+    """Finished pods hold no resources and have nothing to reschedule."""
+    return (pod.status.phase if pod.status else None) not in ("Succeeded", "Failed")
+
+
+def _moves_on_drain(pod: Any) -> bool:
+    """DaemonSet pods are recreated on the same node and mirror pods belong to the kubelet."""
+    if (pod.metadata.annotations or {}).get("kubernetes.io/config.mirror"):
+        return False
+    return not any(ref.kind == "DaemonSet" for ref in pod.metadata.owner_references or [])
+
+
+def _pod_requests(pod: Any) -> tuple[int, int]:
+    cpu = memory = 0
+    for container in pod.spec.containers:
+        requests = (container.resources.requests or {}) if container.resources else {}
+        cpu += cpu_to_millis(requests.get("cpu")) or 0
+        memory += memory_to_mib(requests.get("memory")) or 0
+    return cpu, memory

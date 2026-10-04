@@ -44,6 +44,7 @@ from config import get_settings
 from db.connection import db_now
 from db.models import RunbookExecution, Verification
 from integrations import alertmanager_client, prometheus_client
+from integrations.prometheus_client import GoldenSignals
 from plan import RemediationPlan
 from runbooks.base import SignalWindow
 
@@ -124,21 +125,34 @@ async def observe(plan: RemediationPlan, *, window: str = "5m") -> SignalWindow:
     two different definitions of health.
     """
     node = plan.target_name if plan.target_kind == "Node" else None
-    workload = None if node else plan.target_name
+    pod = plan.target_name if plan.target_kind == "Pod" else None
+    workload = None if node or pod else plan.target_name
 
-    signals = await prometheus_client.golden_signals(
-        plan.target_namespace, workload=workload, window=window
+    # Golden signals describe a workload. For a node they would be read with no selector at all --
+    # the worst replica anywhere in the cluster -- so an unrelated restart elsewhere would fail the
+    # node's fix. Node plans are judged on the queries they committed to instead.
+    signals = (
+        GoldenSignals()
+        if node
+        else await prometheus_client.golden_signals(
+            plan.target_namespace, workload=workload, window=window, pod=pod
+        )
+    )
+    custom = (
+        await prometheus_client.query_thresholds(dict(plan.expected_signal.queries))
+        if plan.expected_signal and plan.expected_signal.queries
+        else {}
     )
 
     alert_name = plan.expected_signal.alert_should_clear if plan.expected_signal else None
     firing: bool | None = None
     if alert_name:
         firing = await alertmanager_client.is_firing(
-            alert_name, namespace=plan.target_namespace, node=node, workload=workload
+            alert_name, namespace=plan.target_namespace, pod=pod, node=node, workload=workload
         )
 
     on_target = await alertmanager_client.alerts_on_target(
-        plan.target_namespace, node=node, workload=workload
+        plan.target_namespace, pod=pod, node=node, workload=workload
     )
 
     return SignalWindow(
@@ -149,6 +163,7 @@ async def observe(plan: RemediationPlan, *, window: str = "5m") -> SignalWindow:
         psi_full=signals.psi_full,
         memory_usage_ratio=signals.memory_usage_ratio,
         new_alerts=tuple(on_target or ()),
+        custom=custom,
     )
 
 
@@ -165,15 +180,17 @@ def judge(
 
     1. Alertmanager reachability -- if alert state cannot be read, nothing else is conclusive.
     2. The alert still firing -- the most direct evidence of failure.
-    3. Golden signals against their ceilings.
+    3. Golden signals against their ceilings, then the plan's own committed queries.
     4. A runbook's own `extra_verification` probe.
     5. New alerts on the target that the action could have caused.
     6. Finally: were enough signals observed to call this a success at all?
     """
     reasons: list[str] = []
 
-    # 1. Alert state unknown. Absence of evidence is never evidence of recovery.
-    if after.alert_firing is None and plan.expected_signal is not None:
+    # 1. Alert state unknown. Absence of evidence is never evidence of recovery. A plan that names
+    #    no alert -- a drain does not make a node Ready -- made no claim here to be unable to check.
+    promised_alert = plan.expected_signal.alert_should_clear if plan.expected_signal else ""
+    if after.alert_firing is None and promised_alert:
         return Verdict(
             outcome="inconclusive",
             reasons=(
@@ -213,6 +230,13 @@ def judge(
             f"above {PSI_FULL_CEILING:.0%}"
         )
 
+    # 3b. The recovery criterion the plan committed to before acting, against its own thresholds.
+    committed = plan.expected_signal.thresholds if plan.expected_signal else {}
+    for name, ceiling in sorted(committed.items()):
+        value = after.custom.get(name)
+        if value is not None and value > ceiling:
+            reasons.append(f"{name} is {value:g}, above the committed threshold of {ceiling:g}")
+
     # 4. The runbook's own claim about its specific fix.
     if extra_failure:
         reasons.append(extra_failure)
@@ -233,30 +257,53 @@ def judge(
         return Verdict(
             outcome="not_recovered",
             reasons=tuple(reasons),
-            alert_cleared=after.alert_firing is False,
+            alert_cleared=_cleared(promised_alert, after),
             signals_before=_signals_dict(before),
             signals_after=_signals_dict(after),
             new_alerts=caused,
         )
 
     # 6. Nothing is wrong -- but was anything actually measured? A workload whose every signal is
-    #    unreadable has not been shown to recover, it has merely not been shown to be broken.
-    tracked = (after.oom_events, after.restarts, after.throttle_ratio, after.psi_full)
+    #    unreadable has not been shown to recover, it has merely not been shown to be broken. And a
+    #    criterion the plan committed to but which could not be read is unproven, not passed.
+    unread = sorted(name for name in committed if after.custom.get(name) is None)
+    if unread:
+        return Verdict(
+            outcome="inconclusive",
+            reasons=(
+                f"the plan's own recovery check could not be read ({', '.join(unread)}), so "
+                "recovery is unproven",
+            ),
+            alert_cleared=_cleared(promised_alert, after),
+            signals_before=_signals_dict(before),
+            signals_after=_signals_dict(after),
+        )
+
+    tracked = (
+        after.oom_events,
+        after.restarts,
+        after.throttle_ratio,
+        after.psi_full,
+        *after.custom.values(),
+    )
     if all(value is None for value in tracked):
         return Verdict(
             outcome="inconclusive",
             reasons=(
                 "the alert cleared but no golden signal could be read, so recovery is unproven",
             ),
-            alert_cleared=after.alert_firing is False,
+            alert_cleared=_cleared(promised_alert, after),
             signals_before=_signals_dict(before),
             signals_after=_signals_dict(after),
         )
 
     return Verdict(
         outcome="remediated",
-        reasons=("alert cleared, golden signals within thresholds, no new alerts on the target",),
-        alert_cleared=True,
+        reasons=(
+            ("alert cleared, " if promised_alert else "")
+            + "signals within thresholds, no new alerts on the target",
+        ),
+        alert_cleared=True if promised_alert else None,
         signals_before=_signals_dict(before),
         signals_after=_signals_dict(after),
     )
@@ -315,8 +362,14 @@ def judge_early(
     )
 
 
+def _cleared(promised_alert: str, after: SignalWindow) -> bool | None:
+    """`None` when no alert was promised: "not applicable" must not read as "did not clear"."""
+    return after.alert_firing is False if promised_alert else None
+
+
 def _signals_dict(window: SignalWindow) -> dict[str, float | None]:
     return {
+        **{f"custom:{name}": value for name, value in window.custom.items()},
         "restarts": float(window.restarts) if window.restarts is not None else None,
         "oom_events": window.oom_events,
         "throttle_ratio": window.throttle_ratio,

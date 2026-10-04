@@ -115,11 +115,20 @@ async def ping() -> bool:
         return False
 
 
-def _selector(namespace: str | None, pod: str | None = None, container: str | None = None) -> str:
+def _selector(
+    namespace: str | None,
+    pod: str | None = None,
+    container: str | None = None,
+    *,
+    exact_pod: str | None = None,
+) -> str:
     parts: list[str] = []
     if namespace:
         parts.append(f'namespace="{namespace}"')
-    if pod:
+    if exact_pod:
+        # A plan that acts on one pod is judged on that pod, not on its siblings.
+        parts.append(f'pod="{exact_pod}"')
+    elif pod:
         # Regex-match the pod prefix: after a rollout the pod name changes, so an exact match would
         # silently return nothing and read as "not observed". The hyphen stops `api` from also
         # matching `api-gateway`'s pods.
@@ -135,6 +144,7 @@ async def golden_signals(
     workload: str | None = None,
     container: str | None = None,
     window: str = "5m",
+    pod: str | None = None,
 ) -> GoldenSignals:
     """Read every golden signal for a workload.
 
@@ -146,7 +156,7 @@ async def golden_signals(
     fix it still contains the OOM that triggered the alert -- and every fix would read as failed.
     `window` is therefore the post-action window, and it applies to restarts and OOMs only.
     """
-    selector = _selector(namespace, workload, container)
+    selector = _selector(namespace, workload, container, exact_pod=pod)
 
     return GoldenSignals(
         # Restarts over the window. A rollback that halves the crash rate is still a crash loop.
@@ -178,3 +188,19 @@ async def query_thresholds(queries: dict[str, str]) -> dict[str, float | None]:
     "None means unobserved" contract as everything else.
     """
     return {name: await _instant_query(query) for name, query in queries.items()}
+
+
+async def memory_peak_mib(
+    namespace: str, workload: str, container: str, *, lookback: str = "1h"
+) -> float | None:
+    """The container's highest working set over the lookback, in MiB -- what a new limit must clear.
+
+    Read during target building, before planning, so `plan()` stays a pure function of the bundle.
+    `None` when unobserved, which the OOM runbook turns into lower confidence rather than a guess
+    presented as a measurement.
+    """
+    selector = _selector(namespace, workload, container)
+    peak = await _instant_query(
+        f"max(max_over_time(container_memory_working_set_bytes{selector}[{lookback}]))"
+    )
+    return peak / (1024 * 1024) if peak is not None else None

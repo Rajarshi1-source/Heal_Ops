@@ -233,5 +233,77 @@ def runbooks() -> None:
     console.print(table)
 
 
+def _owner() -> str:
+    import getpass
+
+    try:
+        return getpass.getuser()
+    except Exception:  # noqa: BLE001 - no login name in some containers
+        return "unknown"
+
+
+def _with_session(operation):  # noqa: ANN001, ANN202 - engine types need sys.path set first
+    """Run one breaker operation in its own transaction against the engine's database."""
+    import asyncio
+
+    async def run():  # noqa: ANN202
+        from db import connection
+
+        try:
+            async with connection.transaction() as session:
+                return await operation(session)
+        finally:
+            await connection.dispose()
+
+    return asyncio.run(run())
+
+
+@app.command()
+def freeze(
+    reason: Annotated[str, typer.Option("--reason", help="Why automation is being stopped.")],
+    owner: Annotated[str | None, typer.Option("--owner", help="Who is freezing it.")] = None,
+) -> None:
+    """Turn all automation off, now, with no expiry -- e.g. --reason "release in progress".
+
+    The freeze is a ledger entry with a reason and an owner, and it stays until `unfreeze`: a
+    release ends when the release does, not when a timer says so.
+    """
+    import breaker
+
+    who = owner or _owner()
+    _with_session(lambda session: breaker.freeze(session, reason=reason, owner=who))
+    console.print(f"[bold red]FROZEN[/bold red] by {who}: {reason}")
+    console.print("[dim]every plan is now denied by policy until `healopsctl unfreeze`[/dim]")
+
+
+@app.command()
+def unfreeze(
+    owner: Annotated[str | None, typer.Option("--owner", help="Who is lifting it.")] = None,
+) -> None:
+    """Lift a freeze (or clear a tripped breaker) and let automation resume."""
+    import breaker
+
+    who = owner or _owner()
+    _with_session(lambda session: breaker.unfreeze(session, owner=who))
+    console.print(f"[bold green]unfrozen[/bold green] by {who}")
+
+
+@app.command()
+def breaker_status() -> None:
+    """Show the remediation breaker: state, why, who, and when it may half-open."""
+    import breaker
+
+    async def read(session):  # noqa: ANN001, ANN202
+        return await breaker.view(session)
+
+    current = _with_session(read)
+    colour = {"closed": "green", "half_open": "yellow", "open": "red"}[current.state]
+    console.print(f"breaker [{colour}]{current.state}[/{colour}]")
+    if current.reason:
+        console.print(f"  reason: {current.reason}  (owner {current.owner})")
+    if current.until:
+        console.print(f"  half-open at: {current.until.isoformat()}")
+
+
 if __name__ == "__main__":
     app()

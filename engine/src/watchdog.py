@@ -29,6 +29,7 @@ import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import breaker
 import compensator
 import notifier
 import plan_store
@@ -165,6 +166,9 @@ async def _handle(
                 "assuming the fix did not work"
             ),
         )
+    if not expired:
+        # A stranded half-open trial counts as a failed one: it was never shown to work.
+        await breaker.record_outcome(session, execution.plan_id, success=False)
     return plan, outcome
 
 
