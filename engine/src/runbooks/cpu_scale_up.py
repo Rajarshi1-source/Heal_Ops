@@ -351,18 +351,16 @@ class CpuScaleUp(Runbook):
 def _cpu_signal(target: Target) -> ExpectedSignal:
     settings = get_settings()
     ns = target.namespace or "default"
+    # This workload's pods only: another hot service in the namespace is not this fix failing.
+    pods = f'namespace="{ns}",pod=~"{target.name}-.*"'
     return ExpectedSignal(
         alert_should_clear="HighPodCPU",
         queries={
             # The dimensionless ratio, not raw throttled-period counters. Raw counters move with
             # replica count -- and this runbook CHANGES the replica count, so a raw comparison
             # before and after would be meaningless by construction.
-            "throttle_ratio": (
-                f'max(healops:container_cpu_throttle_ratio:rate5m{{namespace="{ns}"}})'
-            ),
-            "cpu_usage_ratio": (
-                f'max(healops:container_cpu_usage_ratio:rate5m{{namespace="{ns}"}})'
-            ),
+            "throttle_ratio": (f"max(healops:container_cpu_throttle_ratio:rate5m{{{pods}}})"),
+            "cpu_usage_ratio": (f"max(healops:container_cpu_usage_ratio:rate5m{{{pods}}})"),
         },
         thresholds={
             "throttle_ratio": settings.throttle_ratio_ceiling,

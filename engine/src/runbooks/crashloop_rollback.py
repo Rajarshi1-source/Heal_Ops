@@ -137,10 +137,14 @@ class CrashLoopRollback(Runbook):
             blast_radius=blast_radius,
             expected_signal=ExpectedSignal(
                 alert_should_clear="KubePodCrashLooping",
+                # Scoped to this workload's pods and to the window after the rollback: a
+                # namespace-wide count would fail on any other crashing pod, and a fixed [5m] would
+                # still contain the crash loop being fixed.
                 queries={
                     "restarts": (
                         "max by (namespace, pod, container) ("
-                        f'increase(kube_pod_container_status_restarts_total{{namespace="{target.namespace}"}}[5m])'
+                        "increase(kube_pod_container_status_restarts_total"
+                        f'{{namespace="{target.namespace}",pod=~"{target.name}-.*"}}[$WINDOW])'
                         ")"
                     ),
                 },

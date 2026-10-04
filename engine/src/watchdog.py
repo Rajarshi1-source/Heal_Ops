@@ -26,13 +26,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import breaker
 import compensator
+import gitops
 import notifier
 import plan_store
+import promotion
 from compensator import CompensationOutcome
 from config import get_settings
 from db.connection import db_now, transaction
@@ -52,6 +54,8 @@ class SweepReport:
     expired: int = 0
     skipped: int = 0
     failures: int = 0
+    resumed: int = 0
+    """GitOps pauses released. Routine, so not counted as watchdog actions."""
 
     @property
     def total_actions(self) -> int:
@@ -63,6 +67,7 @@ class SweepReport:
             "expired": self.expired,
             "skipped": self.skipped,
             "failures": self.failures,
+            "resumed": self.resumed,
         }
 
 
@@ -150,7 +155,7 @@ async def _handle(
         log.error("incident missing; cannot compensate", execution_id=execution.id)
         return None
 
-    plan = plan_store.rehydrate(plan_row)
+    plan = plan_store.rehydrate(plan_row, execution)
 
     if expired:
         outcome = await compensator.expire(session, incident, execution, plan, runbook)
@@ -169,6 +174,14 @@ async def _handle(
     if not expired:
         # A stranded half-open trial counts as a failed one: it was never shown to work.
         await breaker.record_outcome(session, execution.plan_id, success=False)
+        if execution.mode in ("approval", "auto"):
+            await promotion.on_outcome(
+                session,
+                plan.runbook,
+                plan.target_namespace,
+                good=False,
+                why="verification never completed",
+            )
     return plan, outcome
 
 
@@ -176,8 +189,8 @@ async def sweep() -> SweepReport:
     """One pass. Safe to run concurrently with itself and with the verifier."""
     settings = get_settings()
     deadline = settings.verification_deadline_seconds
-    counts = {"force_reverted": 0, "expired": 0, "skipped": 0, "failures": 0}
-    acted: list[tuple[RemediationPlan, CompensationOutcome]] = []
+    counts = {"force_reverted": 0, "expired": 0, "skipped": 0, "failures": 0, "resumed": 0}
+    acted: list[tuple[RemediationPlan, CompensationOutcome, str | None]] = []
 
     async with transaction() as session:
         now = await db_now(session)
@@ -212,17 +225,54 @@ async def sweep() -> SweepReport:
                     counts["skipped"] += 1
                 else:
                     counts[bucket] += 1
-                    acted.append(done)
+                    acted.append((*done, execution.pr_url))
+
+        # Last, because the compensations above are what release most pauses: reconciliation
+        # resumes once the imperative change it was standing down for is gone.
+        for execution in await find_pauses_to_resume(session, now):
+            try:
+                async with session.begin_nested():
+                    if await gitops.resume(session, execution):
+                        counts["resumed"] += 1
+            except Exception as exc:  # noqa: BLE001
+                log.error("could not resume gitops", execution_id=execution.id, error=str(exc))
+                counts["failures"] += 1
 
     # After commit: the ledger is the record, the message is only news about it.
-    for plan, outcome in acted:
-        await notifier.watchdog_acted(plan, outcome)
+    for plan, outcome, pr_url in acted:
+        await notifier.watchdog_acted(plan, outcome, pr_url=pr_url)
 
     report = SweepReport(**counts)
     if report.total_actions or report.failures:
         # The watchdog acting means something upstream failed. Never log this at debug.
         log.warning("watchdog acted", **report.to_dict())
     return report
+
+
+#: Statuses in which the imperative change is still live, so the controller must stay paused.
+LIVE = ("executing", AWAITING_VERIFICATION, compensator.CLOSED_REMEDIATED)
+
+
+async def find_pauses_to_resume(session: AsyncSession, now: datetime) -> list[RunbookExecution]:
+    """Paused executions whose change is no longer live -- reverted, expired, failed, blocked.
+
+    A remediated fix keeps its pause until its TTL, which is the whole mitigation window; after
+    that the expiry compensates it above and the pause is released here in the same sweep.
+    """
+    rows = await session.execute(
+        select(RunbookExecution)
+        .where(
+            RunbookExecution.gitops_paused.is_(True),
+            or_(
+                RunbookExecution.compensated.is_(True),
+                RunbookExecution.status.notin_(LIVE),
+                RunbookExecution.expires_at < now,
+            ),
+        )
+        .limit(50)
+        .with_for_update(skip_locked=True)
+    )
+    return list(rows.scalars())
 
 
 async def actions_recorded(session: AsyncSession) -> int:

@@ -37,7 +37,6 @@ from db.models import (
     RemediationPlanRow,
     RemediationRecurrence,
     RunbookExecution,
-    RunbookPromotion,
     Verification,
 )
 from plan import RemediationPlan
@@ -219,23 +218,11 @@ async def _demote(
     session: AsyncSession, runbook: str, namespace: str | None, occurrences: int, key: str
 ) -> None:
     """Authority is earned per namespace and lost per namespace, on one strike."""
-    scope = namespace or "-"
-    row = await session.get(RunbookPromotion, (runbook, scope), with_for_update=True)
-    reason = f"masking guard: {occurrences} remediations of {key} in 7 days"
-    if row is None:
-        row = RunbookPromotion(runbook=runbook, namespace=scope, mode="approval")
-        session.add(row)
-    elif row.mode == "auto":
-        row.mode = "approval"
-    row.changed_reason = reason
-    row.last_changed_at = await db_now(session)
-    row.consecutive_good = 0
-    await session.flush()
-    metrics.promotion_mode.labels(runbook=runbook, namespace=scope).set(
-        metrics.PROMOTION_MODE_VALUES[row.mode]
-    )
-    await ledger.append(
+    import promotion
+
+    await promotion.demote(
         session,
-        "promote",
-        {"runbook": runbook, "namespace": scope, "to": row.mode, "reason": reason},
+        runbook,
+        namespace,
+        reason=f"masking guard: {occurrences} remediations of {key} in 7 days",
     )

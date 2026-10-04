@@ -83,6 +83,8 @@ class ExpectedSignal:
 
     alert_should_clear: str
     queries: dict[str, str] = field(default_factory=dict)
+    """Committed recovery checks. `$WINDOW` is replaced at verification time with the post-action
+    window, so an event count never includes the failure being fixed."""
     thresholds: dict[str, float] = field(default_factory=dict)
     window_seconds: int = 300
 

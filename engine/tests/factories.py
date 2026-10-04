@@ -198,6 +198,7 @@ async def make_execution(
         status=status,
         mode=mode,
         durability=str(plan.durability),
+        gitops_managed=plan.gitops_managed,
         state_before={},
         state_after={},
         signals_before=signals_before or {},

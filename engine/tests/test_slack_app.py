@@ -185,3 +185,61 @@ async def test_feedback_is_recorded_against_the_execution(
         "answered_by": "U9",
     }
     assert "demote" in respond.calls[0]["text"]
+
+
+# --- Phase 6: feedback that changes authority -----------------------------------------------------
+
+
+@pytest.mark.db
+async def test_a_no_demotes_the_runbook(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import notifier
+    import promotion
+    from db.models import RunbookPromotion
+
+    monkeypatch.setattr(slack_app, "transaction", bound_to(db_session))
+    posted: list[Any] = []
+
+    async def promoted(transition: Any) -> None:
+        posted.append(transition)
+
+    monkeypatch.setattr(notifier, "promoted", promoted)
+    await promotion.set_mode(db_session, "scripted_runbook", "shop", "auto", by="t", reason="t")
+    _, execution, _ = await make_execution(db_session)
+
+    await slack_app._record_feedback(click(execution.id, "U9"), Respond(), correct=False)
+
+    row = await db_session.get(RunbookPromotion, ("scripted_runbook", "shop"))
+    assert row is not None and row.mode == "approval"
+    assert posted and "U9" in posted[0].reason
+
+
+@pytest.mark.db
+async def test_shadow_judgements_are_recorded_on_the_ladder(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from db.models import RunbookPromotion
+
+    monkeypatch.setattr(slack_app, "transaction", bound_to(db_session))
+    _, execution, _ = await make_execution(
+        db_session, incident_state=IncidentState.REMEDIATED, status="shadow", mode="shadow"
+    )
+    respond = Respond()
+
+    await slack_app._record_shadow_judgement(click(execution.id), respond, agreed=True)
+
+    row = await db_session.get(RunbookPromotion, ("scripted_runbook", "shop"))
+    assert row is not None and (row.shadow_judged, row.shadow_agreements) == (1, 1)
+    assert "recorded" in respond.calls[0]["text"]
+
+
+@pytest.mark.db
+async def test_only_shadow_plans_can_be_judged(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(slack_app, "transaction", bound_to(db_session))
+    _, execution, _ = await make_execution(db_session)
+    respond = Respond()
+    await slack_app._record_shadow_judgement(click(execution.id), respond, agreed=True)
+    assert "not a shadow plan" in respond.calls[0]["text"]

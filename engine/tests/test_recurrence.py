@@ -58,6 +58,9 @@ async def test_firing_demotes_the_runbook_in_that_namespace(db_session: AsyncSes
 
 
 async def test_firing_is_audited(db_session: AsyncSession) -> None:
+    # On `auto`, so there is authority to withdraw and the demotion itself is a ledger entry.
+    db_session.add(RunbookPromotion(runbook="scripted_runbook", namespace="shop", mode="auto"))
+    await db_session.flush()
     await occur(db_session, 4)
     events = await ledger_events(db_session, None)  # type: ignore[arg-type]
     assert "promote" in events

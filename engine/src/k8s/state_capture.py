@@ -174,16 +174,10 @@ async def capture_node(name: str) -> dict[str, Any]:
 
 
 def classify_gitops(labels: dict[str, str], annotations: dict[str, str]) -> GitOpsManager:
-    """Which controller, if any, also has write access to this object.
+    """Which controller, if any, also has write access to this object. Defined in `gitops`."""
+    from gitops import classify
 
-    Imported by `gitops.py`; kept here because it reads the same metadata the capture path already
-    has in hand.
-    """
-    if "argocd.argoproj.io/instance" in labels or "argocd.argoproj.io/tracking-id" in annotations:
-        return "argocd"
-    if any(k.startswith("kustomize.toolkit.fluxcd.io/") for k in labels):
-        return "flux"
-    return "unmanaged"
+    return classify(labels, annotations)
 
 
 async def build_target_for_deployment(

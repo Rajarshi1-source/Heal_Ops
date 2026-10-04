@@ -19,6 +19,8 @@ node_modules/
 dashboard/.next/
 dashboard/out/
 dashboard/.turbo/
+dashboard/next-env.d.ts
+dashboard/*.tsbuildinfo
 *.tsbuildinfo
 
 # Secrets and local config - never commit these

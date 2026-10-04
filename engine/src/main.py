@@ -25,7 +25,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 import metrics
 import watchdog
-from api import approvals, health, runbooks, webhooks
+from api import approvals, health, incidents, runbooks, webhooks
 from cache import redis_client, streams
 from config import get_settings
 from db import connection
@@ -105,6 +105,7 @@ app.include_router(health.router)
 app.include_router(webhooks.router)
 app.include_router(runbooks.router)
 app.include_router(approvals.router)
+app.include_router(incidents.router)
 
 
 @app.get("/metrics", include_in_schema=False)

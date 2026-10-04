@@ -36,10 +36,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import breaker
 import budget
 import compensator
+import durable
 import ledger
 import notifier
 import orchestrator
 import plan_store
+import promotion
 import recurrence
 import verifier
 from bundle import BundleAlert, IncidentBundle, Target
@@ -56,11 +58,9 @@ from db.models import (
     IncidentState,
     RemediationPlanRow,
     RunbookExecution,
-    RunbookPromotion,
 )
 from orchestrator import HandleResult
 from plan import RemediationPlan
-from policy import PromotionSnapshot
 from runbooks import load_all
 from runbooks.base import SignalWindow
 
@@ -171,7 +171,7 @@ async def plan_incident(
                 target.namespace,
                 breaker_state=(await breaker.view(session)).for_policy(),
             ),
-            promotion=await _promotion(session, runbook.name, target.namespace),
+            promotion=await promotion.get(session, runbook.name, target.namespace),
             observe_before=observe,
         )
         if result.outcome == "awaiting_approval" and result.execution_id is not None:
@@ -230,7 +230,7 @@ async def execute_approved_job(
         result = await orchestrator.execute_approved(
             session,
             incident,
-            plan_store.rehydrate(plan_row),
+            plan_store.rehydrate(plan_row, execution),
             runbook,
             execution,
             plan_row.id,
@@ -337,16 +337,6 @@ def _bundle_alert(event: AlertEvent) -> BundleAlert:
     )
 
 
-async def _promotion(
-    session: AsyncSession, runbook: str, namespace: str | None
-) -> PromotionSnapshot:
-    """The (runbook, namespace) rung. No row means no authority yet: shadow."""
-    row = await session.get(RunbookPromotion, (runbook, namespace or "-"))
-    if row is None:
-        return PromotionSnapshot()
-    return PromotionSnapshot(mode=row.mode, consecutive_good=row.consecutive_good)
-
-
 async def _approval(session: AsyncSession, execution_id: int) -> Approval | None:
     return (
         await session.execute(select(Approval).where(Approval.execution_id == execution_id))
@@ -382,23 +372,27 @@ async def verification_pass(*, observe: Observe = verifier.observe) -> int:
             )
         ).all()
         due = [
-            (execution.id, execution.finished_at, execution.signals_before, plan_row)
+            (
+                execution.id,
+                execution.finished_at,
+                execution.signals_before,
+                plan_store.rehydrate(plan_row, execution),
+            )
             for execution, plan_row in rows
         ]
 
     concluded = 0
-    for execution_id, finished_at, signals_before, plan_row in due:
+    for execution_id, finished_at, signals_before, plan in due:
         elapsed = (now - finished_at).total_seconds()
         if elapsed < settings.verification_early_after_seconds:
             continue
 
-        runbook = registry.get(plan_row.runbook)
+        runbook = registry.get(plan.runbook)
         if runbook is None:
             # Cannot judge with logic that no longer exists; the watchdog escalates it at the
             # deadline rather than this loop guessing.
             continue
 
-        plan = plan_store.rehydrate(plan_row)
         after = await observe(plan, window=verifier.post_action_window(elapsed))
         extra = await runbook.extra_verification(plan, after)
         before = SignalWindow.from_dict(signals_before)
@@ -450,7 +444,26 @@ async def conclude(execution_id: int, plan: RemediationPlan, verdict: verifier.V
         )
         await breaker.evaluate(session)
 
+        # Only executions that acted move the ladder. Promotion takes twenty; demotion takes one.
+        transition = None
+        if execution.mode in ("approval", "auto"):
+            transition = await promotion.on_outcome(
+                session,
+                plan.runbook,
+                plan.target_namespace,
+                good=outcome.status == compensator.CLOSED_REMEDIATED,
+                why=f"verification {verdict.outcome}",
+            )
+
     await notifier.verified(plan, verdict, outcome, execution_id=execution_id)
+    if transition is not None:
+        await notifier.promoted(transition)
+    # Stage 2 of the two-stage fix -- and only now, after verification proved stage 1 worked.
+    if outcome.status == compensator.CLOSED_REMEDIATED and (
+        plan.gitops_managed or plan.requires_git_followup
+    ):
+        result = await durable.open_for(execution_id)
+        await notifier.durable_fix(plan, result.url, result.reason)
     return True
 
 
@@ -469,7 +482,7 @@ async def reap_pass() -> int:
             if plan_row is not None:
                 cards.append(
                     (
-                        plan_store.rehydrate(plan_row),
+                        plan_store.rehydrate(plan_row, execution),
                         approval.slack_channel,
                         approval.slack_message_ts,
                     )

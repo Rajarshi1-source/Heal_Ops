@@ -66,6 +66,9 @@ RESTART_TOLERANCE = 0
 OOM_TOLERANCE = 0.0
 """Any OOM event inside the window means the memory fix did not hold."""
 
+WINDOW_PLACEHOLDER = "$WINDOW"
+"""In a plan's committed query, the post-action window -- the same one the golden signals use."""
+
 MIN_WINDOW_SECONDS = 30
 """Below this, `increase()` over a 15-30s scrape interval has too few samples to mean anything."""
 
@@ -139,7 +142,12 @@ async def observe(plan: RemediationPlan, *, window: str = "5m") -> SignalWindow:
         )
     )
     custom = (
-        await prometheus_client.query_thresholds(dict(plan.expected_signal.queries))
+        await prometheus_client.query_thresholds(
+            {
+                name: query.replace(WINDOW_PLACEHOLDER, window)
+                for name, query in plan.expected_signal.queries.items()
+            }
+        )
         if plan.expected_signal and plan.expected_signal.queries
         else {}
     )

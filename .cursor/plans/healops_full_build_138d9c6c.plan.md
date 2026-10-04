@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: p6-gitops-promotion-dashboard
     content: "Phase 6: gitops.py classification with ephemeral TTLs and narrowly-scoped reconciliation pauses, durable PRs opened only after verification passes, the promotion ladder with one-strike demotion wired into the policy gate, and the Next.js 16.3 dashboard with the horizontal state trail, KPI cards, JsonDiff, and StatusBadge discriminated union"
-    status: pending
+    status: completed
   - id: p7-ci-cd
     content: "Phase 7: three chaos tests per runbook, the decision/policy/ledger eval gates with a 25+ case chaos-generated corpus, the healopsctl CLI with replay/audit/freeze/plan, the four-gate GitHub Actions pipeline with cosign signing, the Helm 4 chart with atomic upgrades, the two-tier read-only public deploy, and the §26 README"
     status: pending

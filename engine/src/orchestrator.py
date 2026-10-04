@@ -31,9 +31,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import breaker
 import budget
+import gitops
 import ledger
 import metrics
 import policy as policy_module
+import promotion as promotion_ladder
 import recurrence
 from bundle import IncidentBundle, Target
 from cache import locks
@@ -108,6 +110,9 @@ async def handle(
     # A pure function of the bundle. No cluster reads happen inside it, which is what keeps the
     # decision eval hermetic and the determinism digest stable.
     plan = runbook.plan(bundle, target)
+    # How the fix reaches the cluster is part of the plan, so it is reviewed, gated and hashed with
+    # it: a GitOps-managed target gets an ephemeral, TTL'd mitigation and a durable PR later.
+    plan = gitops.prepare(plan, target)
     plan = plan.with_plan_id(plan.plan_id or "")
 
     await ledger.append(session, "plan", plan.to_dict(), incident_id=incident.id)
@@ -190,6 +195,7 @@ async def handle(
             incident.id, incident.state, IncidentState.REMEDIATED
         ).value
         incident.outcome = "shadow"
+        await promotion_ladder.on_shadow_plan(session, runbook.name, plan.target_namespace)
         log.info("shadow plan recorded", runbook=runbook.name, summary=plan.summary)
         return HandleResult(
             outcome="shadow",
@@ -297,6 +303,14 @@ async def execute_approved(
             # Persisted BEFORE the action. This is the saga's compensating transaction, and it is
             # already durable by the time anything changes in the cluster.
             await _register_compensation(session, execution, plan)
+
+            # The controller stands down for exactly these fields, before anything changes. If it
+            # cannot be told to, do not act: a change it reverts in three minutes is no mitigation.
+            if plan.gitops_managed:
+                try:
+                    await gitops.pause(session, execution, plan)
+                except gitops.GitOpsPauseFailed as exc:
+                    raise NotAdmitted(str(exc)) from exc
 
             # Read inside the lock, immediately before acting, so "before" means before *this*
             # change and not before some other plan's. Durable for the same reason the
@@ -437,7 +451,13 @@ async def _persist_plan(
     row = RemediationPlanRow(
         incident_id=incident.id,
         runbook=plan.runbook,
-        planner_version=plan.planner_version or get_settings().planner_version,
+        # "0" is the dataclass default, not a version: the engine's own version is what keys the
+        # determinism digests, so it is what every persisted plan must carry.
+        planner_version=(
+            plan.planner_version
+            if plan.planner_version not in ("", "0")
+            else get_settings().planner_version
+        ),
         target_kind=plan.target_kind,
         target_namespace=plan.target_namespace,
         target_name=plan.target_name,

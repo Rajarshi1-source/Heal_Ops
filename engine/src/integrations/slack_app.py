@@ -32,6 +32,8 @@ APPROVE_ACTION = "healops_approve"
 REJECT_ACTION = "healops_reject"
 FEEDBACK_YES = "healops_feedback_yes"
 FEEDBACK_NO = "healops_feedback_no"
+SHADOW_AGREE = "healops_shadow_agree"
+SHADOW_DISAGREE = "healops_shadow_disagree"
 
 
 def build_app() -> Any:
@@ -71,6 +73,16 @@ def build_app() -> Any:
     async def handle_feedback_no(ack: Any, body: dict[str, Any], respond: Any) -> None:
         await ack()
         await _record_feedback(body, respond, correct=False)
+
+    @bolt.action(SHADOW_AGREE)
+    async def handle_shadow_agree(ack: Any, body: dict[str, Any], respond: Any) -> None:
+        await ack()
+        await _record_shadow_judgement(body, respond, agreed=True)
+
+    @bolt.action(SHADOW_DISAGREE)
+    async def handle_shadow_disagree(ack: Any, body: dict[str, Any], respond: Any) -> None:
+        await ack()
+        await _record_shadow_judgement(body, respond, agreed=False)
 
     return bolt
 
@@ -136,11 +148,12 @@ async def _record_decision(body: dict[str, Any], respond: Any, *, approved: bool
 async def _record_feedback(body: dict[str, Any], respond: Any, *, correct: bool) -> None:
     """ "Was this correct?" -- and a `No` must actually change future authority.
 
-    Logging the answer alone would make the button theatre. The real behaviour change lives in
-    `promotion.on_outcome`, which is wired in Phase 6; until then the answer is recorded in the
-    ledger so no feedback is lost in the meantime.
+    Logging the answer alone would make the button theatre. A `No` demotes the runbook in this
+    namespace, one strike, in the same transaction that records the answer.
     """
     import ledger
+    import notifier
+    import promotion
 
     execution_id = _execution_id(body)
     user = _user_id(body)
@@ -164,7 +177,18 @@ async def _record_feedback(body: dict[str, Any], respond: Any, *, correct: bool)
             incident_id=execution.incident_id,
             execution_id=execution_id,
         )
+        transition = None
+        plan = await _plan_for(session, execution)
+        if not correct and plan is not None:
+            transition = await promotion.demote(
+                session,
+                plan.runbook,
+                plan.target_namespace,
+                reason=f"{user} answered 'No' to 'was this correct?'",
+            )
 
+    if transition is not None:
+        await notifier.promoted(transition)
     await respond(
         text=(
             "Thanks — recorded. "
@@ -178,6 +202,33 @@ async def _record_feedback(body: dict[str, Any], respond: Any, *, correct: bool)
     )
 
 
+async def _record_shadow_judgement(body: dict[str, Any], respond: Any, *, agreed: bool) -> None:
+    """A human compared a shadow plan with what they did. This is the shadow rung's evidence."""
+    import notifier
+    import promotion
+
+    execution_id = _execution_id(body)
+    user = _user_id(body)
+    if execution_id is None or user is None:
+        return
+
+    async with transaction() as session:
+        execution = await session.get(RunbookExecution, execution_id)
+        plan = await _plan_for(session, execution) if execution is not None else None
+        if execution is None or plan is None or execution.mode != "shadow":
+            await respond(text="That is not a shadow plan.", replace_original=False)
+            return
+        transition = await promotion.on_shadow_feedback(
+            session, plan.runbook, plan.target_namespace, agreed=agreed, by=user
+        )
+
+    if transition is not None:
+        await notifier.promoted(transition)
+    await respond(
+        text="Thanks — recorded against this runbook's shadow record.", replace_original=False
+    )
+
+
 async def _plan_for(session: AsyncSession, execution: RunbookExecution) -> RemediationPlan | None:
     """Rehydrate the plan so the resolved card can restate what was approved."""
     if execution.plan_id is None:
@@ -187,7 +238,7 @@ async def _plan_for(session: AsyncSession, execution: RunbookExecution) -> Remed
     from db.models import RemediationPlanRow
 
     row = await session.get(RemediationPlanRow, execution.plan_id)
-    return plan_store.rehydrate(row) if row is not None else None
+    return plan_store.rehydrate(row, execution) if row is not None else None
 
 
 def _execution_id(body: dict[str, Any]) -> int | None:

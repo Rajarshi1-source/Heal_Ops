@@ -289,6 +289,39 @@ def unfreeze(
 
 
 @app.command()
+def promote(
+    runbook: Annotated[str, typer.Argument(help="Runbook name, e.g. crashloop_rollback.")],
+    namespace: Annotated[str, typer.Argument(help="Namespace, or '-' for node-scoped runbooks.")],
+    to: Annotated[str, typer.Option("--to", help="shadow, approval or auto.")],
+    reason: Annotated[str, typer.Option("--reason", help="Why a human is overriding the ladder.")],
+    owner: Annotated[str | None, typer.Option("--owner", help="Who is doing it.")] = None,
+) -> None:
+    """Move a runbook's rung by hand. A ledger entry like any other transition, with an owner.
+
+    The ladder normally moves on evidence; this is the override for seeding a demo or for pulling
+    authority immediately. Granting `auto` by hand is recorded as exactly that.
+    """
+    import promotion
+
+    if to not in ("shadow", "approval", "auto"):
+        console.print("[red]--to must be shadow, approval or auto[/red]")
+        raise typer.Exit(EXIT_ERROR)
+    who = owner or _owner()
+    scope = None if namespace == "-" else namespace
+
+    async def apply(session):  # noqa: ANN001, ANN202
+        return await promotion.set_mode(session, runbook, scope, to, by=who, reason=reason)  # type: ignore[arg-type]
+
+    moved = _with_session(apply)
+    if moved is None:
+        console.print(f"{runbook} in {namespace} is already on {to}")
+    else:
+        console.print(
+            f"{runbook} in {namespace}: {moved.from_mode} -> [bold]{to}[/bold] ({reason})"
+        )
+
+
+@app.command()
 def breaker_status() -> None:
     """Show the remediation breaker: state, why, who, and when it may half-open."""
     import breaker

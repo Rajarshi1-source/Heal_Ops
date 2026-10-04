@@ -33,7 +33,7 @@ def sweep_env(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> dict
     runbook = ScriptedRunbook()
     notified: list[Any] = []
 
-    async def notify(plan: Any, outcome: Any) -> None:
+    async def notify(plan: Any, outcome: Any, **_kwargs: Any) -> None:
         notified.append(outcome)
 
     monkeypatch.setattr(watchdog, "transaction", bound_to(db_session))
@@ -190,3 +190,53 @@ def test_report_serialises() -> None:
     report = watchdog.SweepReport(force_reverted=1, expired=2)
     assert report.total_actions == 3
     assert report.to_dict()["expired"] == 2
+
+
+async def test_a_reverted_fix_has_its_gitops_pause_released(
+    db_session: AsyncSession, sweep_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resume belongs to the watchdog, never to the request path."""
+    resumed: list[int] = []
+
+    async def resume(session: Any, execution: Any) -> bool:
+        resumed.append(execution.id)
+        execution.gitops_paused = False
+        return True
+
+    monkeypatch.setattr(watchdog.gitops, "resume", resume)
+    _, reverted, _ = await make_execution(db_session, status="reverted")
+    reverted.gitops_paused, reverted.compensated = True, True
+    _, live, _ = await make_execution(
+        db_session, status="remediated", expires_in_seconds=3600, finished_ago_seconds=400
+    )
+    live.gitops_paused = True
+    await db_session.flush()
+
+    report = await watchdog.sweep()
+
+    assert resumed == [reverted.id], "a live mitigation keeps its pause until the TTL"
+    assert report.resumed == 1
+    assert report.total_actions == 0, "routine, so not counted as a watchdog action"
+
+
+async def test_an_expired_fix_is_compensated_then_resumed_in_one_sweep(
+    db_session: AsyncSession, sweep_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    resumed: list[int] = []
+
+    async def resume(session: Any, execution: Any) -> bool:
+        resumed.append(execution.id)
+        return True
+
+    monkeypatch.setattr(watchdog.gitops, "resume", resume)
+    _, execution, _ = await make_execution(
+        db_session,
+        incident_state=IncidentState.REMEDIATED,
+        status="remediated",
+        expires_in_seconds=-60,
+    )
+    execution.gitops_paused = True
+    await db_session.flush()
+
+    report = await watchdog.sweep()
+    assert report.expired == 1 and resumed == [execution.id]

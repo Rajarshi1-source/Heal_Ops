@@ -22,11 +22,12 @@ the click look like it failed.
 from __future__ import annotations
 
 import hmac
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import structlog
 from fastapi import APIRouter, Body, Header, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from cache import streams
 from config import get_settings
@@ -125,6 +126,67 @@ async def decide(
         detail=resolution.authorisation.reason,
         enqueued=resolution.enqueue,
     )
+
+
+@router.get("/api/approvals", summary="Approvals, soonest deadline first, with their plans")
+async def list_approvals(status_filter: str = "pending", limit: int = 50) -> dict[str, object]:
+    """What the dashboard's approval page shows: the same facts as the Slack card.
+
+    `expires_at` comes from PostgreSQL. The dashboard renders its countdown from this value and
+    never computes a deadline itself, because the database owns expiry.
+    """
+    import plan_store
+    from db.connection import session_scope
+    from db.models import Approval, RemediationPlanRow
+
+    async with session_scope() as session:
+        stmt = select(Approval).order_by(Approval.expires_at).limit(min(limit, 200))
+        if status_filter != "all":
+            stmt = stmt.where(Approval.status == status_filter)
+        items = []
+        for approval in (await session.execute(stmt)).scalars():
+            execution = await session.get(RunbookExecution, approval.execution_id)
+            row = (
+                await session.get(RemediationPlanRow, execution.plan_id)
+                if execution is not None and execution.plan_id
+                else None
+            )
+            plan = plan_store.rehydrate(row, execution) if row is not None else None
+            items.append(
+                {
+                    "execution_id": approval.execution_id,
+                    "incident_id": approval.incident_id,
+                    "status": approval.status,
+                    "requested_at": approval.requested_at,
+                    "expires_at": approval.expires_at,
+                    "decided_by": approval.decided_by,
+                    "reason": approval.reason,
+                    "plan": _card(plan) if plan is not None else None,
+                }
+            )
+    return {"items": items}
+
+
+def _card(plan: Any) -> dict[str, object]:
+    signal = plan.expected_signal
+    return {
+        "runbook": plan.runbook,
+        "summary": plan.summary,
+        "target_key": plan.target_key,
+        "actions": plan.describe_actions(),
+        "compensation": [c.describe() for c in plan.compensation],
+        "reversibility": str(plan.reversibility),
+        "blast_radius_score": plan.blast_radius.score(),
+        "blast_radius": {
+            "pods": plan.blast_radius.pods,
+            "nodes": plan.blast_radius.nodes,
+            "user_facing": plan.blast_radius.user_facing,
+        },
+        "cost_delta_inr_month": plan.cost_delta_inr_month,
+        "confidence": plan.confidence,
+        "expected_alert": signal.alert_should_clear if signal else None,
+        "window_seconds": signal.window_seconds if signal else None,
+    }
 
 
 @router.get(

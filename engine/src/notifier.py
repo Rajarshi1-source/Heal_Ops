@@ -24,6 +24,7 @@ from plan import RemediationPlan
 if TYPE_CHECKING:
     from compensator import CompensationOutcome
     from orchestrator import HandleResult
+    from promotion import Transition
     from recurrence import MaskingEvent
     from verifier import Verdict
 
@@ -42,7 +43,9 @@ async def orchestrated(
             case "denied" if result.decision is not None:
                 await slack_client.post(slack_messages.policy_denied(plan, result.decision))
             case "shadow":
-                await slack_client.post(slack_messages.shadow_notice(plan))
+                await slack_client.post(
+                    slack_messages.shadow_notice(plan, execution_id=result.execution_id)
+                )
             case "awaiting_approval":
                 return await _approval_card(result, expires_at)
             case "execute_failed" | "blocked":
@@ -96,12 +99,14 @@ async def verified(
         log.warning("verification notification failed", error=str(exc))
 
 
-async def watchdog_acted(plan: RemediationPlan, outcome: CompensationOutcome) -> None:
+async def watchdog_acted(
+    plan: RemediationPlan, outcome: CompensationOutcome, *, pr_url: str | None = None
+) -> None:
     try:
         if outcome.failed_to_revert:
             blocks = slack_messages.revert_failed(plan, outcome)
         elif outcome.trigger == "expiry":
-            blocks = slack_messages.expiry_notice(plan)
+            blocks = slack_messages.expiry_notice(plan, pr_url=pr_url)
         else:
             blocks = slack_messages.watchdog_reverted(plan, outcome)
         await slack_client.post(blocks)
@@ -133,3 +138,25 @@ async def masking(event: MaskingEvent, issue_url: str | None) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         log.warning("masking notification failed", error=str(exc))
+
+
+async def promoted(transition: Transition) -> None:
+    """A rung changed: authority granted on evidence, or withdrawn on one strike."""
+    try:
+        await slack_client.post(
+            slack_messages.promotion_notice(
+                transition.runbook,
+                transition.namespace,
+                to_mode=transition.to_mode,
+                evidence=transition.reason,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("promotion notification failed", error=str(exc))
+
+
+async def durable_fix(plan: RemediationPlan, url: str | None, reason: str) -> None:
+    try:
+        await slack_client.post(slack_messages.durable_fix(plan, pr_url=url, reason=reason))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("durable-fix notification failed", error=str(exc))

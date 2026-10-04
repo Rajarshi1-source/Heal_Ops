@@ -319,6 +319,7 @@ class RunbookPromotion(Base):
     total_reverted: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     shadow_plans: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     shadow_agreements: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    shadow_judged: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_outcome: Mapped[str | None] = mapped_column(Text)
     last_changed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=NOW

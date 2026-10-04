@@ -142,6 +142,14 @@ class Settings(BaseSettings):
     breaker_k8s_error_rate: float = 0.20
     breaker_half_open_after_seconds: int = 1800
 
+    # --- GitOps --------------------------------------------------------------
+    argocd_namespace: str = "argocd"
+    """Where Argo CD's Application objects live; the target's own namespace is not it."""
+    github_base_branch: str = "main"
+    manifest_path_annotation: str = "healops.io/manifest-path"
+    """Set on a workload to name its manifest in `github_repo`. Without it HealOps cannot know
+    which file in the repo declares the workload, and says so rather than guessing."""
+
     # --- ephemeral fixes -----------------------------------------------------
     default_ephemeral_ttl_seconds: int = 7200
 

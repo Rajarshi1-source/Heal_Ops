@@ -654,3 +654,121 @@ async def test_oom_targets_are_sized_from_the_observed_peak(
         target_key="shop/Deployment/api",
     )
     assert (await worker.build_target(other)).containers[0].memory_peak_mib is None
+
+
+# --- Phase 6: the ladder and the durable PR, driven by verdicts -----------------------------------
+
+
+async def test_a_verified_auto_fix_climbs_the_ladder_and_opens_its_pr(
+    db_session: AsyncSession, wired: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import durable
+    import promotion
+
+    opened = Recorder(durable.PrResult("https://github.com/o/m/pull/1", "opened"))
+    monkeypatch.setattr(worker.durable, "open_for", opened)
+    monkeypatch.setattr(worker.notifier, "durable_fix", Recorder())
+    monkeypatch.setattr(worker.notifier, "promoted", Recorder())
+    await promotion.set_mode(db_session, "scripted_runbook", "shop", "auto", by="t", reason="t")
+
+    _, execution, _ = await make_execution(
+        db_session, plan=make_plan(gitops_managed=True), finished_ago_seconds=400
+    )
+    await worker.verification_pass(observe=Observer(healthy_window()))
+
+    row = await db_session.get(RunbookPromotion, ("scripted_runbook", "shop"))
+    assert row is not None and row.consecutive_good == 1
+    assert opened.calls == [((execution.id,), {})], "stage 2, only after stage 1 verified"
+
+
+async def test_a_reverted_fix_demotes_and_opens_no_pr(
+    db_session: AsyncSession, wired: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import promotion
+
+    opened = Recorder()
+    promoted = Recorder()
+    monkeypatch.setattr(worker.durable, "open_for", opened)
+    monkeypatch.setattr(worker.notifier, "promoted", promoted)
+    await promotion.set_mode(db_session, "scripted_runbook", "shop", "auto", by="t", reason="t")
+
+    await make_execution(db_session, plan=make_plan(gitops_managed=True), finished_ago_seconds=90)
+    await worker.verification_pass(observe=Observer(healthy_window(restarts=3)))
+
+    row = await db_session.get(RunbookPromotion, ("scripted_runbook", "shop"))
+    assert row is not None and row.mode == "approval", "one strike"
+    assert opened.calls == [], "a PR for a change that did not work is worse than none"
+    assert promoted.calls and promoted.calls[0][0][0].to_mode == "approval"
+
+
+async def test_an_unmanaged_fix_opens_no_pr(
+    db_session: AsyncSession, wired: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened = Recorder()
+    monkeypatch.setattr(worker.durable, "open_for", opened)
+    await make_execution(db_session, finished_ago_seconds=400)
+    await worker.verification_pass(observe=Observer(healthy_window()))
+    assert opened.calls == []
+
+
+async def test_a_failed_gitops_pause_blocks_the_action(
+    db_session: AsyncSession, wired: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A change the controller would revert in three minutes is not a mitigation."""
+    import gitops
+
+    async def fail(*_args: Any, **_kwargs: Any) -> None:
+        raise gitops.GitOpsPauseFailed("Application shop-app not found")
+
+    monkeypatch.setattr(orchestrator.gitops, "pause", fail)
+    await promote(db_session, "auto")
+    incident = await make_incident(db_session)
+
+    async def managed(_incident: Incident) -> Any:
+        return make_target(labels={"argocd.argoproj.io/instance": "shop-app"})
+
+    result = await worker.plan_incident(incident.id, target_builder=managed, observe=Observer())
+
+    assert result is not None and result.outcome == "blocked"
+    assert "shop-app" in result.detail
+    assert wired["runbook"].execute_calls == 0
+
+
+async def test_shadow_plans_are_counted_on_the_ladder(
+    db_session: AsyncSession, wired: dict[str, Any]
+) -> None:
+    incident = await make_incident(db_session)
+    await worker.plan_incident(incident.id, target_builder=target_builder, observe=Observer())
+    row = await db_session.get(RunbookPromotion, ("scripted_runbook", "shop"))
+    assert row is not None and row.mode == "shadow" and row.shadow_plans == 1
+
+
+async def test_an_approved_fix_on_a_managed_workload_still_pauses_the_controller(
+    db_session: AsyncSession, wired: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: rehydrating the plan dropped `gitops_managed`, so an approved fix on an Argo CD
+    workload ran without pausing the controller -- which would revert it within one sync."""
+    paused: list[int] = []
+
+    async def pause(session: Any, execution: Any, plan: Any) -> None:
+        assert plan.gitops_managed is True
+        paused.append(execution.id)
+
+    monkeypatch.setattr(orchestrator.gitops, "pause", pause)
+    monkeypatch.setattr(approval_manager.approval_store, "mirror", Recorder())
+    _, execution, _ = await make_execution(
+        db_session,
+        plan=make_plan(gitops_managed=True),
+        incident_state=IncidentState.AWAITING_APPROVAL,
+        status="awaiting_approval",
+        mode="approval",
+        finished_ago_seconds=None,
+        decision="require_approval",
+    )
+    await approval_manager.request(db_session, execution)
+    await approval_manager.resolve(db_session, execution, approved=True, decided_by="U1")
+
+    result = await worker.execute_approved_job(execution.id, observe=Observer())
+
+    assert result is not None and result.outcome == "executed"
+    assert paused == [execution.id]

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import plan_store
 import verifier
+from config import get_settings
 from db.models import RemediationPlanRow, Verification
 from plan import Durability
 from runbooks.base import SignalWindow
@@ -185,7 +186,10 @@ async def test_a_plan_survives_the_round_trip_through_its_row(db_session: AsyncS
     rebuilt = plan_store.rehydrate(row)
 
     # The factory's plan names incident 1; the persisted row belongs to the incident just created.
-    assert rebuilt.digest() == replace(plan, incident_id=row.incident_id).digest()
+    # ...and the persisted row carries the engine's own planner version, not the dataclass default.
+    assert row.planner_version == get_settings().planner_version
+    expected = replace(plan, incident_id=row.incident_id, planner_version=row.planner_version)
+    assert rebuilt.digest() == expected.digest()
     assert rebuilt.compensation == plan.compensation
     assert plan_store.decision_of(row).effect == "require_approval"
 
@@ -282,3 +286,55 @@ async def test_a_pod_plan_is_judged_on_that_pod_alone(probes: dict[str, list[Any
 def test_custom_signals_round_trip() -> None:
     window = node_window(pods_left_on_node=0.0, unavailable_replicas=None)
     assert SignalWindow.from_dict(window.to_dict()) == window
+
+
+async def test_committed_queries_are_measured_over_the_post_action_window(
+    probes: dict[str, list[Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: a committed `[5m]` count still contained the failure being fixed."""
+    from plan import ExpectedSignal
+
+    seen: dict[str, str] = {}
+
+    async def thresholds(queries: dict[str, str]) -> dict[str, float | None]:
+        seen.update(queries)
+        return dict.fromkeys(queries, 0.0)
+
+    monkeypatch.setattr(verifier.prometheus_client, "query_thresholds", thresholds)
+    plan = make_plan(
+        expected_signal=ExpectedSignal(
+            alert_should_clear="KubePodCrashLooping",
+            queries={"restarts": "max(increase(x[$WINDOW]))"},
+            thresholds={"restarts": 0.0},
+        )
+    )
+
+    await verifier.observe(plan, window="270s")
+    assert seen == {"restarts": "max(increase(x[270s]))"}
+
+
+def test_the_rollbacks_committed_check_is_scoped_to_its_own_pods() -> None:
+    """Regression: namespace-wide, any other crashing pod in `chaos` failed this rollback."""
+    from bundle import BundleAlert, ContainerState, IncidentBundle, Target
+    from runbooks.crashloop_rollback import CrashLoopRollback
+
+    target = Target(
+        kind="Deployment",
+        name="crashy-api",
+        namespace="chaos",
+        replicas=3,
+        containers=(ContainerState(name="c", image="i:v2", restart_count=6),),
+        revision=4,
+        previous_revision=3,
+        previous_image="i:v1",
+    )
+    bundle = IncidentBundle(
+        incident_id="1",
+        cause_alert=BundleAlert(
+            alertname="KubePodCrashLooping", fingerprint="f", namespace="chaos"
+        ),
+        target=target,
+    )
+    query = CrashLoopRollback().plan(bundle, target).expected_signal.queries["restarts"]  # type: ignore[union-attr]
+    assert 'pod=~"crashy-api-.*"' in query
+    assert "[$WINDOW]" in query and "[5m]" not in query

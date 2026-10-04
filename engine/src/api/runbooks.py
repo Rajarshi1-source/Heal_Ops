@@ -21,9 +21,34 @@ router = APIRouter(tags=["runbooks"])
 
 @router.get("/api/runbooks", summary="List registered runbooks and their contracts")
 async def list_runbooks() -> dict[str, Any]:
+    from sqlalchemy import select
+
+    from db.connection import session_scope
+    from db.models import RunbookPromotion
+
     registry = load_all()
-    return {
-        "runbooks": registry.describe(),
-        "triggers": list(registry.triggers),
-        "count": len(registry.all()),
-    }
+    ladder: dict[str, list[dict[str, Any]]] = {}
+    try:
+        async with session_scope() as session:
+            for row in (await session.execute(select(RunbookPromotion))).scalars():
+                ladder.setdefault(row.runbook, []).append(
+                    {
+                        "namespace": row.namespace,
+                        "mode": row.mode,
+                        "consecutive_good": row.consecutive_good,
+                        "total_executions": row.total_executions,
+                        "total_reverted": row.total_reverted,
+                        "shadow_judged": row.shadow_judged,
+                        "shadow_agreements": row.shadow_agreements,
+                        "last_changed_at": row.last_changed_at,
+                        "changed_reason": row.changed_reason,
+                    }
+                )
+    except Exception:  # noqa: BLE001 - render the catalog without the ladder, not nothing
+        ladder = {}
+
+    runbooks = [
+        {**entry, "promotion": sorted(ladder.get(entry["name"], []), key=lambda r: r["namespace"])}
+        for entry in registry.describe()
+    ]
+    return {"runbooks": runbooks, "triggers": list(registry.triggers), "count": len(runbooks)}

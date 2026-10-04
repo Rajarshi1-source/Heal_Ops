@@ -26,6 +26,9 @@ dependencies = [
     "httpx==0.28.1",
     "cel-python==0.5.0",
     "pyyaml==6.0.3",
+    # Round-trip YAML for durable-fix PRs: a diff that drops comments and reorders keys is
+    # unreviewable, and a PR nobody can review is worse than no PR.
+    "ruamel.yaml==0.19.1",
     "prometheus-client==0.26.0",
     "structlog==26.1.0",
     "tenacity==9.1.4",

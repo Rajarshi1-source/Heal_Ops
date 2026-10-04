@@ -67,3 +67,45 @@ def test_breaker_status_shows_why_and_who(calls: list[Any]) -> None:
     assert result.exit_code == 0
     assert "open" in result.output and "release in progress" in result.output
     assert "alice" in result.output
+
+
+def test_promote_records_the_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    import promotion
+
+    seen: dict[str, Any] = {}
+
+    async def set_mode(_session: Any, runbook: str, namespace: Any, mode: str, **kw: Any) -> Any:
+        seen.update(runbook=runbook, namespace=namespace, mode=mode, **kw)
+        return promotion.Transition(runbook, namespace or "-", "shadow", mode, kw["reason"])
+
+    monkeypatch.setattr(promotion, "set_mode", set_mode)
+    monkeypatch.setattr(main, "_with_session", lambda operation: asyncio.run(operation(None)))
+
+    result = runner.invoke(
+        main.app,
+        [
+            "promote",
+            "node_drain",
+            "-",
+            "--to",
+            "approval",
+            "--reason",
+            "drains ask",
+            "--owner",
+            "bo",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert seen == {
+        "runbook": "node_drain",
+        "namespace": None,
+        "mode": "approval",
+        "by": "bo",
+        "reason": "drains ask",
+    }
+
+
+def test_promote_rejects_an_unknown_rung() -> None:
+    result = runner.invoke(main.app, ["promote", "x", "shop", "--to", "god", "--reason", "r"])
+    assert result.exit_code == main.EXIT_ERROR

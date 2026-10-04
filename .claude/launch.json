@@ -1,0 +1,27 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "engine-demo",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "uvicorn", "main:app", "--app-dir", "engine/src", "--port", "8000"],
+      "port": 8000,
+      "env": {
+        "HEALOPS_DATABASE_URL": "postgresql+asyncpg://postgres:postgres@localhost:55432/healops_demo",
+        "HEALOPS_REDIS_URL": "redis://localhost:56379/1",
+        "HEALOPS_WORKER_ENABLED": "false"
+      }
+    },
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "dashboard", "run", "dev"],
+      "port": 3000,
+      "env": {
+        "ENGINE_URL": "http://localhost:8000",
+        "NEXT_PUBLIC_READ_ONLY": "true",
+        "NEXT_TELEMETRY_DISABLED": "1"
+      }
+    }
+  ]
+}

@@ -354,10 +354,14 @@ def policy_denied(plan: RemediationPlan, decision: PolicyDecision) -> list[Block
     ]
 
 
-def shadow_notice(plan: RemediationPlan) -> list[Block]:
-    """ "I would have done X." Visually distinct from anything that acted."""
+def shadow_notice(plan: RemediationPlan, *, execution_id: int | None = None) -> list[Block]:
+    """ "I would have done X." Visually distinct from anything that acted.
+
+    The two buttons are the shadow rung's evidence: a human says whether this matches what they
+    actually did. Ten judged plans at 90% agreement earn the runbook the approval rung.
+    """
     actions = "\n".join(f"• `{a.describe()}`" for a in plan.actions)
-    return [
+    blocks = [
         _header(f"{_ICON['shadow']} SHADOW — no action taken"),
         _section(f"*I would have:* {plan.summary}"),
         _section(f"*Actions not executed*\n{actions}"),
@@ -373,6 +377,28 @@ def shadow_notice(plan: RemediationPlan) -> list[Block]:
             "compared against what humans actually did."
         ),
     ]
+    if execution_id is not None:
+        blocks.append(
+            {
+                "type": "actions",
+                "block_id": f"healops_shadow_{execution_id}",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "That's what I did", "emoji": True},
+                        "action_id": "healops_shadow_agree",
+                        "value": str(execution_id),
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "I did something else"},
+                        "action_id": "healops_shadow_disagree",
+                        "value": str(execution_id),
+                    },
+                ],
+            }
+        )
+    return blocks
 
 
 def expiry_notice(plan: RemediationPlan, *, pr_url: str | None = None) -> list[Block]:
@@ -388,6 +414,28 @@ def expiry_notice(plan: RemediationPlan, *, pr_url: str | None = None) -> list[B
         _context(
             "Automation that leaves permanent hand-edits in a cluster is worse than no automation. "
             "This is the mechanism that prevents it."
+        ),
+    ]
+
+
+def durable_fix(plan: RemediationPlan, *, pr_url: str | None, reason: str) -> list[Block]:
+    """Stage 2: the durable change as a PR -- or why there isn't one yet.
+
+    The "not filed" case is a nag on purpose: the mitigation expires, and if nothing durable lands
+    the workload returns to the declared state that caused the incident.
+    """
+    if pr_url:
+        return [
+            _section(
+                f":memo: *Durable fix proposed* for `{plan.target_key}`\n{pr_url}\n"
+                "Opened after verification passed, with the evidence attached."
+            ),
+            _context("The mitigation buys minutes; the PR is the fix. Merge it before the TTL."),
+        ]
+    return [
+        _section(
+            f":memo: *No durable PR for* `{plan.target_key}`: {reason}\nThe live mitigation still "
+            "expires on schedule, so the declared state needs changing by hand."
         ),
     ]
 

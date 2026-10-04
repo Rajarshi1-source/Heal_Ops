@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from db.models import RemediationPlanRow
+from db.models import RemediationPlanRow, RunbookExecution
 from plan import (
     ApiCall,
     BlastRadius,
@@ -23,11 +23,17 @@ from plan import (
 from policy import Effect, PolicyDecision
 
 
-def rehydrate(row: RemediationPlanRow) -> RemediationPlan:
+def rehydrate(
+    row: RemediationPlanRow, execution: RunbookExecution | None = None
+) -> RemediationPlan:
     """Rebuild the plan object, and crucially its **compensation**, from its persisted row.
 
     This is why `compensation` is a column rather than something derived at revert time: by the time
     anything reads it back, the cluster state it would be derived from is the thing being undone.
+
+    `gitops_managed` is recorded on the execution, not the plan row, so pass the execution whenever
+    there is one. Without it a managed plan reads as unmanaged: an approved fix would run without
+    pausing the GitOps controller, and the durable PR would never open.
     """
     signal = row.expected_signal or {}
     radius = row.blast_radius or {}
@@ -55,6 +61,7 @@ def rehydrate(row: RemediationPlanRow) -> RemediationPlan:
         cost_delta_inr_month=float(row.cost_delta_inr_month or 0),
         refusal_reason=row.refusal_reason,
         planner_version=row.planner_version,
+        gitops_managed=execution.gitops_managed if execution is not None else False,
         plan_id=row.id,
     )
 

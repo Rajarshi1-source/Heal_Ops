@@ -82,6 +82,11 @@ def policy_v1() -> k8s_client.PolicyV1Api:
     return k8s_client.PolicyV1Api(api_client())
 
 
+def custom_objects() -> k8s_client.CustomObjectsApi:
+    """Argo CD Applications and Flux Kustomizations, for pausing reconciliation."""
+    return k8s_client.CustomObjectsApi(api_client())
+
+
 def _count_failure(verb: str, exc: ApiException) -> None:
     """Count server-side failures only -- the breaker trips on this rate.
 

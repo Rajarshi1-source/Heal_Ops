@@ -53,6 +53,7 @@ EVENT_TYPES: Final[frozenset[str]] = frozenset(
         "unfreeze",
         "gitops_pause",
         "gitops_resume",
+        "durable_pr",
         "state_transition",
         "illegal_transition",
         "masking_guard",
