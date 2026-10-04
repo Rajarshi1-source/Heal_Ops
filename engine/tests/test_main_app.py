@@ -53,6 +53,11 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(main.streams, "dlq_depth", no_depth)
     monkeypatch.setattr(main.streams, "ensure_groups", no_groups)
     monkeypatch.setattr(main.connection, "ping", no_ping)
+
+    async def no_watchdog_actions(_session: Any) -> int:
+        return 0
+
+    monkeypatch.setattr(main.watchdog, "actions_recorded", no_watchdog_actions)
     monkeypatch.setattr(main, "get_elector", lambda: FakeElector())
 
     get_settings.cache_clear()

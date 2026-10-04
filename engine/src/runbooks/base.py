@@ -80,6 +80,27 @@ class SignalWindow:
             "new_alerts": list(self.new_alerts),
         }
 
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any] | None) -> SignalWindow:
+        """Rebuild a persisted window. Missing keys come back as `None` -- not observed."""
+        raw = raw or {}
+
+        def _float(key: str) -> float | None:
+            value = raw.get(key)
+            return float(value) if value is not None else None
+
+        restarts = raw.get("restarts")
+        firing = raw.get("alert_firing")
+        return cls(
+            alert_firing=bool(firing) if firing is not None else None,
+            restarts=int(restarts) if restarts is not None else None,
+            oom_events=_float("oom_events"),
+            throttle_ratio=_float("throttle_ratio"),
+            psi_full=_float("psi_full"),
+            memory_usage_ratio=_float("memory_usage_ratio"),
+            new_alerts=tuple(str(a) for a in raw.get("new_alerts") or ()),
+        )
+
 
 class Runbook(abc.ABC):
     """Base class for every remediation.

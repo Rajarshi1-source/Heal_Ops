@@ -62,9 +62,7 @@ async def test_takes_the_worst_series_not_the_average() -> None:
     Averaging would let one healthy pod mask a sick one, which is exactly how a partial failure
     gets recorded as a success.
     """
-    respx.get(QUERY_URL).mock(
-        return_value=httpx.Response(200, json=result("0.01", "0.90", "0.02"))
-    )
+    respx.get(QUERY_URL).mock(return_value=httpx.Response(200, json=result("0.01", "0.90", "0.02")))
     signals = await prom.golden_signals("shop", workload="api")
 
     assert signals.throttle_ratio == pytest.approx(0.90)
@@ -153,12 +151,8 @@ async def test_unparseable_value_is_none() -> None:
 @respx.mock
 async def test_one_bad_series_among_good_ones_is_ignored() -> None:
     # A single malformed series should not discard the readings that are valid.
-    respx.get(QUERY_URL).mock(
-        return_value=httpx.Response(200, json=result("bad", "0.30"))
-    )
-    assert (await prom.golden_signals("shop", workload="api")).throttle_ratio == pytest.approx(
-        0.30
-    )
+    respx.get(QUERY_URL).mock(return_value=httpx.Response(200, json=result("bad", "0.30")))
+    assert (await prom.golden_signals("shop", workload="api")).throttle_ratio == pytest.approx(0.30)
 
 
 @respx.mock
@@ -177,9 +171,7 @@ async def test_queries_use_the_shared_recording_rules() -> None:
     Re-writing the PromQL here is how the definition an alert fired on and the definition recovery
     is measured by drift apart.
     """
-    route = respx.get(QUERY_URL).mock(
-        return_value=httpx.Response(200, json=result("0.01"))
-    )
+    route = respx.get(QUERY_URL).mock(return_value=httpx.Response(200, json=result("0.01")))
     await prom.golden_signals("shop", workload="api")
 
     queries = [str(call.request.url) for call in route.calls]
@@ -221,7 +213,7 @@ async def test_node_scoped_call_omits_the_workload_selector() -> None:
     await prom.golden_signals("shop", workload=None)
 
     joined = " ".join(str(c.request.url) for c in route.calls)
-    assert "pod%3D~" not in joined and 'pod=~' not in joined
+    assert "pod%3D~" not in joined and "pod=~" not in joined
 
 
 # --- plan-specific queries ------------------------------------------------------------------------
@@ -268,3 +260,24 @@ async def test_all_signals_default_to_unobserved() -> None:
     signals = GoldenSignals()
     assert signals.observed() == 0
     assert len(signals.missing()) == 5
+
+
+@respx.mock
+async def test_event_counts_use_the_post_action_window() -> None:
+    """The ten-minute OOM rule still holds the OOM that triggered the alert five minutes after a
+    successful fix, so counts must be taken over the window that starts after the action."""
+    route = respx.get(QUERY_URL).mock(return_value=httpx.Response(200, json=result("0")))
+    await prom.golden_signals("shop", workload="api", window="270s")
+
+    queries = [c.request.url.params["query"] for c in route.calls]
+    oom = next(q for q in queries if "container_oom_events_total" in q)
+    restarts = next(q for q in queries if "restarts_total" in q)
+    assert "[270s]" in oom and "[270s]" in restarts
+    assert "increase10m" not in " ".join(queries)
+
+
+@respx.mock
+async def test_the_pod_prefix_does_not_match_a_longer_workload_name() -> None:
+    route = respx.get(QUERY_URL).mock(return_value=httpx.Response(200, json=result("0")))
+    await prom.golden_signals("shop", workload="api")
+    assert 'pod=~"api-.*"' in route.calls[0].request.url.params["query"]

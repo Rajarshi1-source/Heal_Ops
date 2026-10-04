@@ -135,21 +135,20 @@ def test_unreadable_alert_state_is_inconclusive_not_success() -> None:
     assert verdict.alert_cleared is None
 
 
-def test_inconclusive_does_not_trigger_compensation() -> None:
-    """Undoing a fix that may have worked would be a second production change.
+def test_inconclusive_triggers_compensation() -> None:
+    """A change that could not be shown to work is not left in production on trust.
 
-    `inconclusive` escalates to a human instead -- the cluster is left as it is.
+    The plan routes `inconclusive` to `compensate()` alongside `not_recovered`: the watchdog makes
+    the same call when verification never ran at all, and the two must not disagree.
     """
     verdict = judge(plan(), before=sick(), after=healthy(alert_firing=None))
-    assert verdict.needs_compensation is False
+    assert verdict.needs_compensation is True
 
 
 def test_alert_state_is_not_required_when_the_plan_expects_none() -> None:
     # A plan with no expected_signal makes no claim about an alert, so unknown alert state is not
     # itself a reason for doubt.
-    verdict = judge(
-        plan(expected_signal=None), before=sick(), after=healthy(alert_firing=None)
-    )
+    verdict = judge(plan(expected_signal=None), before=sick(), after=healthy(alert_firing=None))
     assert verdict.outcome == "remediated"
 
 
@@ -328,15 +327,12 @@ def test_verdict_serialises_for_the_ledger_and_the_dashboard() -> None:
     assert "signals_after" in payload
 
 
-def test_only_not_recovered_requests_compensation() -> None:
-    # The three outcomes must be distinguishable in exactly this way, because compensation is a
-    # production change and `inconclusive` must not trigger one.
+def test_only_a_proven_recovery_avoids_compensation() -> None:
+    # Success is the one outcome that keeps the change. The other two both undo it, and stay
+    # distinct in the verdict so the scorecard can tell "it failed" from "we could not tell".
     assert judge(plan(), before=sick(), after=healthy()).needs_compensation is False
     assert judge(plan(), before=sick(), after=healthy(restarts=3)).needs_compensation is True
-    assert (
-        judge(plan(), before=sick(), after=healthy(alert_firing=None)).needs_compensation
-        is False
-    )
+    assert judge(plan(), before=sick(), after=healthy(alert_firing=None)).needs_compensation is True
 
 
 @pytest.mark.parametrize(

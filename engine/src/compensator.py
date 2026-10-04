@@ -13,6 +13,11 @@ row before the action runs, and a separate CronJob can find and execute it with 
 process that created it.
 
 Both paths call the same `runbook.compensate(plan)`, which is why that method must be idempotent.
+
+A third caller, `expire()`, is not a failure path at all: an ephemeral mitigation's TTL elapsed and
+the workload returns to its declared state. It is kept apart in the record -- execution status
+`expired`, not `reverted` -- because the false-remediation rate counts reverts, and a mitigation
+that did its job and then stood down is not a false remediation.
 """
 
 from __future__ import annotations
@@ -21,11 +26,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import structlog
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import ledger
 import metrics
-from core.incident_state import assert_transition
+from core.incident_state import assert_transition, is_terminal
 from db.models import Incident, IncidentState, RunbookExecution, Verification
 from plan import RemediationPlan
 from runbooks.base import ExecutionResult, Runbook
@@ -43,7 +49,7 @@ Trigger = Literal["verification", "watchdog", "expiry"]
 CLOSED_REMEDIATED = "remediated"
 CLOSED_REVERTED = "reverted"
 CLOSED_REVERT_FAILED = "revert_failed"
-CLOSED_ESCALATED = "escalated"
+CLOSED_EXPIRED = "expired"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +58,9 @@ class CompensationOutcome:
     reverted: bool
     detail: str
     escalate: bool
+    trigger: Trigger | None = None
+    ledger_hash: str | None = None
+    """The `compensate` entry's hash, quoted in the escalation so evidence is one lookup away."""
 
     @property
     def failed_to_revert(self) -> bool:
@@ -73,13 +82,9 @@ async def on_verification(
 ) -> CompensationOutcome:
     """Path 1: the verifier reached a conclusion.
 
-    Three outcomes, and only one of them is a success:
-
-    * `remediated`  -- close the incident; open the durable PR if the plan has one.
-    * `not_recovered` -- compensate, then escalate with the evidence.
-    * `inconclusive` -- escalate **without** compensating. Undoing a fix that may have worked,
-      because a metrics endpoint was unreachable, would make an observability outage into a second
-      production change.
+    Only `remediated` is a success. `not_recovered` and `inconclusive` both compensate and escalate;
+    the verdict row keeps them apart, so "it failed" and "we could not tell" remain distinguishable
+    on the scorecard even though both end in the same revert.
     """
     if verdict.outcome == "remediated":
         execution.status = CLOSED_REMEDIATED
@@ -89,34 +94,18 @@ async def on_verification(
         incident.outcome = "remediated"
         await session.flush()
 
+        # A durable plan's pull request is opened from here once GitOps support lands (Phase 6):
+        # only after verification passes, so a PR never carries a fix that did not work.
         log.info("incident remediated", runbook=plan.runbook, execution_id=execution.id)
         return CompensationOutcome(
             status=CLOSED_REMEDIATED,
             reverted=False,
             detail="verified recovered",
             escalate=False,
+            trigger="verification",
         )
 
-    if verdict.outcome == "inconclusive":
-        execution.status = CLOSED_ESCALATED
-        incident.state = assert_transition(
-            incident.id, incident.state, IncidentState.ESCALATED
-        ).value
-        incident.outcome = "escalated"
-        await session.flush()
-
-        log.warning(
-            "verification inconclusive; escalating without compensating",
-            runbook=plan.runbook,
-            reasons=verdict.reasons,
-        )
-        return CompensationOutcome(
-            status=CLOSED_ESCALATED,
-            reverted=False,
-            detail="; ".join(verdict.reasons),
-            escalate=True,
-        )
-
+    prefix = "could not confirm recovery" if verdict.outcome == "inconclusive" else "did not work"
     return await _revert(
         session,
         incident,
@@ -124,7 +113,7 @@ async def on_verification(
         plan,
         runbook,
         trigger="verification",
-        reason="; ".join(verdict.reasons),
+        reason=f"{prefix}: " + "; ".join(verdict.reasons),
     )
 
 
@@ -149,7 +138,6 @@ async def force_revert(
         execution_id=execution.id,
         reason=reason,
     )
-    metrics.watchdog_actions_total.inc()
     return await _revert(
         session, incident, execution, plan, runbook, trigger="watchdog", reason=reason
     )
@@ -173,7 +161,6 @@ async def expire(
         runbook=plan.runbook,
         execution_id=execution.id,
     )
-    metrics.watchdog_actions_total.inc()
     return await _revert(
         session,
         incident,
@@ -182,7 +169,6 @@ async def expire(
         runbook,
         trigger="expiry",
         reason=f"ephemeral mitigation expired after {plan.ttl_seconds}s",
-        escalate_on_success=False,
     )
 
 
@@ -195,7 +181,6 @@ async def _revert(
     *,
     trigger: Trigger,
     reason: str,
-    escalate_on_success: bool = True,
 ) -> CompensationOutcome:
     """Run the persisted compensation and record what happened.
 
@@ -216,7 +201,7 @@ async def _revert(
             error=str(exc),
         )
 
-    await ledger.append(
+    digest = await ledger.append(
         session,
         "compensate",
         {
@@ -232,50 +217,81 @@ async def _revert(
     metrics.compensations_total.labels(runbook=plan.runbook, trigger=trigger).inc()
 
     execution.compensated = True
-    _mark_verification_compensated(session, execution)
+    await _mark_verification_compensated(session, execution)
 
-    if result.ok:
-        execution.status = CLOSED_REVERTED
-        execution.detail = f"{reason} -> {result.detail}"
-        # An expiry closes cleanly; a failed remediation escalates so a human sees the evidence.
-        target_state = IncidentState.ESCALATED if escalate_on_success else IncidentState.REVERTED
-        incident.state = assert_transition(incident.id, incident.state, target_state).value
-        incident.outcome = "reverted" if not escalate_on_success else "escalated"
+    if not result.ok:
+        execution.status = CLOSED_REVERT_FAILED
+        execution.detail = f"{reason} -> COMPENSATION FAILED: {result.detail}"
+        _close_incident(incident, IncidentState.ESCALATED, "revert_failed")
         await session.flush()
 
-        return CompensationOutcome(
-            status=CLOSED_REVERTED,
-            reverted=True,
+        log.error(
+            "compensation failed; cluster is in an undescribed state",
+            runbook=plan.runbook,
+            execution_id=execution.id,
             detail=result.detail,
-            escalate=escalate_on_success,
+        )
+        return CompensationOutcome(
+            status=CLOSED_REVERT_FAILED,
+            reverted=False,
+            detail=result.detail,
+            escalate=True,
+            trigger=trigger,
+            ledger_hash=digest,
         )
 
-    execution.status = CLOSED_REVERT_FAILED
-    execution.detail = f"{reason} -> COMPENSATION FAILED: {result.detail}"
-    incident.state = assert_transition(incident.id, incident.state, IncidentState.ESCALATED).value
-    incident.outcome = "revert_failed"
-    await session.flush()
+    execution.detail = f"{reason} -> {result.detail}"
+    if trigger == "expiry":
+        execution.status = CLOSED_EXPIRED
+        # Usually the incident closed as remediated long ago, and terminal states are terminal: the
+        # expiry is a fact about the mitigation, not a new verdict on the incident.
+        if not is_terminal(incident.state):
+            _close_incident(incident, IncidentState.REVERTED, "expired")
+        await session.flush()
+        return CompensationOutcome(
+            status=CLOSED_EXPIRED,
+            reverted=True,
+            detail=result.detail,
+            escalate=False,
+            trigger=trigger,
+            ledger_hash=digest,
+        )
 
-    log.error(
-        "compensation failed; cluster is in an undescribed state",
-        runbook=plan.runbook,
-        execution_id=execution.id,
-        detail=result.detail,
-    )
+    # The system caught its own mistake. `reverted` is the scorecard's bucket for exactly this, and
+    # it still escalates: the original problem is back, and a human needs the evidence.
+    execution.status = CLOSED_REVERTED
+    _close_incident(incident, IncidentState.REVERTED, "reverted")
+    await session.flush()
     return CompensationOutcome(
-        status=CLOSED_REVERT_FAILED,
-        reverted=False,
+        status=CLOSED_REVERTED,
+        reverted=True,
         detail=result.detail,
         escalate=True,
+        trigger=trigger,
+        ledger_hash=digest,
     )
 
 
-def _mark_verification_compensated(session: AsyncSession, execution: RunbookExecution) -> None:
+def _close_incident(incident: Incident, state: IncidentState, outcome: str) -> None:
+    incident.state = assert_transition(incident.id, incident.state, state).value
+    incident.outcome = outcome
+
+
+async def _mark_verification_compensated(
+    session: AsyncSession, execution: RunbookExecution
+) -> None:
     """Flag the verification row, so the false-remediation rate can be computed from one table.
 
     `reverted_after_verification / executed` is the trust metric nobody else reports, and it needs
     the compensation flag to sit next to the verdict that caused it.
+
+    An UPDATE rather than a walk of the session's identity map: the map holds clean objects only
+    weakly, so the verification row flushed a moment earlier may already be gone from it, and the
+    flag would silently never be set.
     """
-    for obj in session.identity_map.values():
-        if isinstance(obj, Verification) and obj.execution_id == execution.id:
-            obj.compensated = True
+    await session.execute(
+        update(Verification)
+        .where(Verification.execution_id == execution.id)
+        .values(compensated=True)
+        .execution_options(synchronize_session="fetch")
+    )

@@ -39,12 +39,15 @@ def build_app() -> Any:
     from slack_bolt.async_app import AsyncApp
 
     settings = get_settings()
-    assert settings.slack_bot_token is not None
-    assert settings.slack_signing_secret is not None
+    token, secret = settings.slack_bot_token, settings.slack_signing_secret
+    if token is None or secret is None:
+        # Without the signing secret Bolt cannot verify a request, and an unverified button click
+        # must never reach the approval path.
+        raise RuntimeError("slack is not configured: needs both the bot token and signing secret")
 
     bolt = AsyncApp(
-        token=settings.slack_bot_token.get_secret_value(),
-        signing_secret=settings.slack_signing_secret.get_secret_value(),
+        token=token.get_secret_value(),
+        signing_secret=secret.get_secret_value(),
         # The adapter owns the HTTP layer, so Bolt must not try to start its own.
         process_before_response=True,
     )
@@ -74,6 +77,7 @@ def build_app() -> Any:
 
 async def _record_decision(body: dict[str, Any], respond: Any, *, approved: bool) -> None:
     """Translate a button click into a recorded decision."""
+    from cache import streams
     from core import approval_manager
     from integrations import slack_messages
 
@@ -84,36 +88,36 @@ async def _record_decision(body: dict[str, Any], respond: Any, *, approved: bool
         return
 
     async with transaction() as session:
-        execution = await session.get(RunbookExecution, execution_id)
+        execution = await session.get(RunbookExecution, execution_id, with_for_update=True)
         if execution is None:
             await respond(text=f"No execution {execution_id} — it may have been cleaned up.")
             return
 
-        authorisation = await approval_manager.decide(
+        resolution = await approval_manager.resolve(
             session,
-            execution_id,
+            execution,
             approved=approved,
             decided_by=user,
             slack_message_ts=_message_ts(body),
             slack_channel=_channel_id(body),
         )
-        execution.status = "queued" if authorisation.allowed else "rejected"
         plan = await _plan_for(session, execution)
+        incident_id = execution.incident_id
 
-    if authorisation.allowed:
-        from cache import streams
-
+    if resolution.enqueue:
         # Enqueue rather than execute inline: the click has already been acknowledged, and a
         # Kubernetes call in this handler would block the Slack response path.
         await streams.enqueue(
-            "execute_approved",
-            {"execution_id": execution_id, "incident_id": execution.incident_id},
+            "execute_approved", {"execution_id": execution_id, "incident_id": incident_id}
         )
 
-    # Replace the card so the buttons cannot be clicked again on a settled question.
-    if plan is not None:
+    authorisation = resolution.authorisation
+    if plan is not None and resolution.execution_status in ("queued", approval_manager.REJECTED):
+        # Replace the card so the buttons cannot be clicked again on a settled question.
         await respond(
-            blocks=slack_messages.approval_resolved(plan, approved=approved, decided_by=user),
+            blocks=slack_messages.approval_resolved(
+                plan, approved=authorisation.allowed, decided_by=authorisation.decided_by or user
+            ),
             replace_original=True,
         )
     else:
@@ -125,6 +129,7 @@ async def _record_decision(body: dict[str, Any], respond: Any, *, approved: bool
         approved=approved,
         decided_by=user,
         allowed=authorisation.allowed,
+        enqueued=resolution.enqueue,
     )
 
 
@@ -178,11 +183,11 @@ async def _plan_for(session: AsyncSession, execution: RunbookExecution) -> Remed
     if execution.plan_id is None:
         return None
 
+    import plan_store
     from db.models import RemediationPlanRow
-    from watchdog import rehydrate_plan
 
     row = await session.get(RemediationPlanRow, execution.plan_id)
-    return rehydrate_plan(row) if row is not None else None
+    return plan_store.rehydrate(row) if row is not None else None
 
 
 def _execution_id(body: dict[str, Any]) -> int | None:

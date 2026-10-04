@@ -200,6 +200,11 @@ class RunbookExecution(Base):
     gitops_managed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     gitops_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     compensated: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # The target as observed immediately before acting. Durable for the same reason compensation
+    # is: a successor leader has to be able to finish verifying what its predecessor started.
+    signals_before: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
 
     incident: Mapped[Incident] = relationship(back_populates="executions")
 

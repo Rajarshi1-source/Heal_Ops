@@ -8,9 +8,10 @@ verifier would record `remediated` for an incident that is still burning.
 So a missing series, an unreachable server, a query error and a `NaN` all collapse to `None`, and
 the verifier turns `None` into `inconclusive` rather than into success.
 
-The queries themselves are the recording rules from `charts/alerting-rules`, referenced by name
-rather than re-written here. Duplicating PromQL between the alert rules and the verifier is how the
-two drift apart until an alert fires on one definition and recovery is judged by another.
+The ratio queries are the recording rules from `charts/alerting-rules`, referenced by name rather
+than re-written here. Duplicating PromQL between the alert rules and the verifier is how the two
+drift apart until an alert fires on one definition and recovery is judged by another. The event
+counts are the exception, for the reason given on `golden_signals`.
 """
 
 from __future__ import annotations
@@ -120,8 +121,9 @@ def _selector(namespace: str | None, pod: str | None = None, container: str | No
         parts.append(f'namespace="{namespace}"')
     if pod:
         # Regex-match the pod prefix: after a rollout the pod name changes, so an exact match would
-        # silently return nothing and read as "not observed".
-        parts.append(f'pod=~"{pod}.*"')
+        # silently return nothing and read as "not observed". The hyphen stops `api` from also
+        # matching `api-gateway`'s pods.
+        parts.append(f'pod=~"{pod}-.*"')
     if container:
         parts.append(f'container="{container}"')
     return "{" + ",".join(parts) + "}" if parts else ""
@@ -136,8 +138,13 @@ async def golden_signals(
 ) -> GoldenSignals:
     """Read every golden signal for a workload.
 
-    Queries reference the recording rules defined alongside the alert rules, so the definition the
-    alert fired on and the definition recovery is judged by are literally the same expression.
+    The ratio signals reference the recording rules defined alongside the alert rules, so the
+    definition the alert fired on and the definition recovery is judged by are the same expression.
+
+    The two *event counts* cannot: they must be counted over a window that starts after the action.
+    The OOM recording rule looks back a fixed ten minutes, so five minutes after a successful memory
+    fix it still contains the OOM that triggered the alert -- and every fix would read as failed.
+    `window` is therefore the post-action window, and it applies to restarts and OOMs only.
     """
     selector = _selector(namespace, workload, container)
 
@@ -147,7 +154,9 @@ async def golden_signals(
             f"max(increase(kube_pod_container_status_restarts_total{selector}[{window}]))"
         ),
         # OOM by COUNTER, not the flapping last_terminated_reason gauge.
-        oom_events=await _instant_query(f"max(healops:container_oom_events:increase10m{selector})"),
+        oom_events=await _instant_query(
+            f"max(increase(container_oom_events_total{selector}[{window}]))"
+        ),
         # The dimensionless ratio. Raw throttled-period counters move with replica count and window
         # length, so a raw before/after comparison is meaningless -- especially for a runbook that
         # changes the replica count.

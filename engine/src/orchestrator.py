@@ -21,7 +21,9 @@ at all -- which is why it is persisted rather than held in memory.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Literal, assert_never
 
 import structlog
@@ -33,13 +35,19 @@ import policy as policy_module
 from bundle import IncidentBundle, Target
 from cache import locks
 from config import get_settings
+from core import approval_manager
 from core.incident_state import assert_transition
+from db.connection import db_clock, db_now
 from db.models import Incident, IncidentState, RemediationPlanRow, RunbookExecution
 from plan import RemediationPlan
 from policy import BudgetSnapshot, PolicyDecision, PromotionSnapshot, TargetView
-from runbooks.base import Runbook
+from runbooks.base import Runbook, SignalWindow
 
 log = structlog.get_logger(__name__)
+
+ObserveFn = Callable[[RemediationPlan], Awaitable[SignalWindow]]
+"""Reads the target's signals immediately before acting. Injected so the orchestrator stays
+testable without Prometheus; the worker passes `verifier.observe`."""
 
 Outcome = Literal[
     "refused", "denied", "shadow", "awaiting_approval", "executed", "execute_failed", "blocked"
@@ -71,6 +79,7 @@ async def handle(
     *,
     budget: BudgetSnapshot | None = None,
     promotion: PromotionSnapshot | None = None,
+    observe_before: ObserveFn | None = None,
 ) -> HandleResult:
     """Run one incident through the pipeline.
 
@@ -196,12 +205,13 @@ async def handle(
     await session.flush()
 
     if decision.needs_approval:
-        # The approval row is created by `approvals.request()` in the same transaction, and
-        # PostgreSQL owns the deadline. Nothing executes here; expiry escalates rather than acting.
+        # The approval row is created in this same transaction, and PostgreSQL owns its deadline.
+        # Nothing executes here; expiry escalates rather than acting.
         incident.state = assert_transition(
             incident.id, incident.state, IncidentState.AWAITING_APPROVAL
         ).value
         execution.status = "awaiting_approval"
+        await approval_manager.request(session, execution, reasons=decision.messages)
         await ledger.append(
             session,
             "approve",
@@ -228,7 +238,14 @@ async def handle(
 
     # --- stage 5: execute -------------------------------------------------------------------------
     return await execute_approved(
-        session, incident, plan, runbook, execution, plan_row.id, decision
+        session,
+        incident,
+        plan,
+        runbook,
+        execution,
+        plan_row.id,
+        decision,
+        observe_before=observe_before,
     )
 
 
@@ -240,6 +257,8 @@ async def execute_approved(
     execution: RunbookExecution,
     plan_id: str,
     decision: PolicyDecision,
+    *,
+    observe_before: ObserveFn | None = None,
 ) -> HandleResult:
     """The only mutating window in the system.
 
@@ -265,7 +284,18 @@ async def execute_approved(
             # already durable by the time anything changes in the cluster.
             await _register_compensation(session, execution, plan)
 
+            # Read inside the lock, immediately before acting, so "before" means before *this*
+            # change and not before some other plan's. Durable for the same reason the
+            # compensation is: whoever finishes verifying this may not be the process that acted.
+            if observe_before is not None:
+                execution.signals_before = (await observe_before(plan)).to_dict()
+
+            execution.started_at = await db_clock(session)
             result = await runbook.execute(plan)
+            execution.finished_at = await db_clock(session)
+            execution.duration_ms = int(
+                (execution.finished_at - execution.started_at).total_seconds() * 1000
+            )
 
             await ledger.append(
                 session,
@@ -428,10 +458,6 @@ async def _register_compensation(
     The compensation already lives on the plan row; recording the expiry here is what lets the
     watchdog find and reverse this execution without the process that created it still being alive.
     """
-    from datetime import timedelta
-
-    from db.connection import db_now
-
     if plan.ttl_seconds:
         now = await db_now(session)
         execution.expires_at = now + timedelta(seconds=plan.ttl_seconds)

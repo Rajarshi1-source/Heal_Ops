@@ -24,11 +24,13 @@ from fastapi.responses import PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 import metrics
+import watchdog
 from api import approvals, health, runbooks, webhooks
 from cache import redis_client, streams
 from config import get_settings
 from db import connection
-from k8s.lease import get_elector
+from k8s.lease import get_elector, identity
+from worker import Worker
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 structlog.configure(
@@ -68,10 +70,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     await get_elector().start()
 
+    # The loops start on every replica and act only on the leader. A read-only public build has
+    # nothing to plan or verify, so it runs none of them.
+    worker: Worker | None = None
+    if settings.worker_enabled and not settings.read_only:
+        worker = Worker(get_elector(), consumer=identity())
+        worker.start()
+
     try:
         yield
     finally:
         log.info("healops engine draining")
+        # Stop acting before giving up the Lease, so there is never a moment where this replica
+        # still works while a successor believes it leads.
+        if worker is not None:
+            await worker.stop()
         await get_elector().stop()
         await redis_client.close()
         await connection.dispose()
@@ -101,6 +114,11 @@ async def prometheus_metrics() -> PlainTextResponse:
     metrics.queue_depth.set(await streams.depth())
     metrics.dlq_depth.set(await streams.dlq_depth())
     metrics.is_leader.set(1 if get_elector().is_leader else 0)
+    try:
+        async with connection.session_scope() as session:
+            metrics.watchdog_actions_total.set(await watchdog.actions_recorded(session))
+    except Exception as exc:  # noqa: BLE001 - a scrape must not fail because PostgreSQL did
+        log.warning("could not read watchdog actions from the ledger", error=str(exc))
     metrics.promotion_mode.labels(runbook="_engine", namespace=settings.self_namespace).set(0)
     return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 

@@ -24,6 +24,7 @@ an in-window approval returns `False`.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -35,8 +36,9 @@ import ledger
 from cache import approval_store
 from cache.approval_store import CachedApproval
 from config import get_settings
+from core.incident_state import assert_transition
 from db.connection import db_now
-from db.models import Approval, RunbookExecution
+from db.models import Approval, Incident, IncidentState, RunbookExecution
 
 log = structlog.get_logger(__name__)
 
@@ -51,6 +53,25 @@ class Authorisation:
 
     def __bool__(self) -> bool:
         return self.allowed
+
+
+@dataclass(frozen=True, slots=True)
+class Resolution:
+    """What one decision did to the execution it was about."""
+
+    authorisation: Authorisation
+    execution_status: str
+    enqueue: bool
+    """True only for the single call that moved `awaiting_approval -> queued`.
+
+    A second "Approve" click, or a retried dashboard request, gets the original authorisation back
+    but `enqueue=False` -- otherwise a double click would queue the same execution twice.
+    """
+
+
+#: Execution statuses for an approval that ended without a grant.
+REJECTED = "rejected"
+APPROVAL_EXPIRED = "approval_expired"
 
 
 async def request(
@@ -209,13 +230,15 @@ async def decide(
         execution_id=execution_id,
     )
 
-    await approval_store.mirror(
-        CachedApproval(
-            execution_id=execution_id,
-            status=row.status,  # type: ignore[arg-type]
-            expires_at=row.expires_at.isoformat(),
-            decided_by=decided_by,
-            slack_message_ts=row.slack_message_ts,
+    await _best_effort(
+        approval_store.mirror(
+            CachedApproval(
+                execution_id=execution_id,
+                status=row.status,  # type: ignore[arg-type]
+                expires_at=row.expires_at.isoformat(),
+                decided_by=decided_by,
+                slack_message_ts=row.slack_message_ts,
+            )
         )
     )
 
@@ -228,11 +251,53 @@ async def decide(
     return Authorisation(approved, f"{row.status} by {decided_by}", decided_by=decided_by)
 
 
+async def resolve(
+    session: AsyncSession,
+    execution: RunbookExecution,
+    *,
+    approved: bool,
+    decided_by: str,
+    slack_message_ts: str | None = None,
+    slack_channel: str | None = None,
+) -> Resolution:
+    """Record a decision and settle the execution and incident it was about.
+
+    The one entry point for both the Slack button and the dashboard, so the two cannot drift in
+    what an approval *does*. Caller owns the transaction; the `approve` ledger entry written by
+    `decide()` lands in the same commit as the state change here.
+    """
+    authorisation = await decide(
+        session,
+        execution.id,
+        approved=approved,
+        decided_by=decided_by,
+        slack_message_ts=slack_message_ts,
+        slack_channel=slack_channel,
+    )
+
+    if execution.status != "awaiting_approval":
+        # Settled by an earlier click, the reaper, or a worker that already ran it. Report the
+        # original decision and change nothing -- overwriting the status of an execution that is
+        # already running would hand it to a second worker.
+        return Resolution(authorisation, execution.status, enqueue=False)
+
+    if authorisation.allowed:
+        execution.status = "queued"
+        await session.flush()
+        return Resolution(authorisation, execution.status, enqueue=True)
+
+    row = await _fetch(session, execution.id)
+    status = REJECTED if row is not None and row.status == "rejected" else APPROVAL_EXPIRED
+    await _escalate(session, execution, status)
+    return Resolution(authorisation, execution.status, enqueue=False)
+
+
 async def reap_expired(session: AsyncSession) -> list[Approval]:
-    """Transition `pending -> expired` for everything past its deadline.
+    """Transition `pending -> expired` for everything past its deadline, and escalate.
 
     Runs on a short loop so the state machine is driven by durable data rather than by whoever
     happens to read the row next. Expired approvals **escalate**; nothing here executes anything.
+    Silence is not consent.
     """
     now = await db_now(session)
 
@@ -264,7 +329,10 @@ async def reap_expired(session: AsyncSession) -> list[Approval]:
             incident_id=row.incident_id,
             execution_id=row.execution_id,
         )
-        await approval_store.invalidate(row.execution_id)
+        execution = await session.get(RunbookExecution, row.execution_id)
+        if execution is not None and execution.status == "awaiting_approval":
+            await _escalate(session, execution, APPROVAL_EXPIRED)
+        await _best_effort(approval_store.invalidate(row.execution_id))
 
     log.info("reaped expired approvals", count=len(rows))
     return rows
@@ -283,4 +351,33 @@ async def _mark_expired(session: AsyncSession, execution_id: int) -> None:
         .values(status="expired")
     )
     await session.flush()
-    await approval_store.invalidate(execution_id)
+    await _best_effort(approval_store.invalidate(execution_id))
+
+
+async def _escalate(session: AsyncSession, execution: RunbookExecution, status: str) -> None:
+    """An approval that ended without a grant hands the incident to a human, explicitly.
+
+    Leaving the incident in `awaiting_approval` would show it on the dashboard as still waiting for
+    a decision that has already been made.
+    """
+    execution.status = status
+    incident = await session.get(Incident, execution.incident_id)
+    if incident is not None and incident.state == IncidentState.AWAITING_APPROVAL.value:
+        incident.state = assert_transition(
+            incident.id, incident.state, IncidentState.ESCALATED
+        ).value
+        incident.outcome = status
+    await session.flush()
+
+
+async def _best_effort(operation: Awaitable[object]) -> None:
+    """Cache writes never decide anything, so a cache outage must not roll back a decision.
+
+    Without this, Redis being down would turn a human's recorded approval into an exception inside
+    the very transaction that records it -- the cache would have become a dependency of the safety
+    control it exists only to speed up.
+    """
+    try:
+        await operation
+    except Exception as exc:  # noqa: BLE001
+        log.warning("approval cache write failed; PostgreSQL remains authoritative", error=str(exc))

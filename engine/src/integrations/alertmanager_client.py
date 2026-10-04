@@ -57,25 +57,38 @@ async def active_alerts(
     return result if isinstance(result, list) else None
 
 
+def _target_filters(
+    namespace: str | None, pod: str | None, node: str | None, workload: str | None
+) -> list[str]:
+    filters: list[str] = []
+    if namespace:
+        filters.append(f"namespace={namespace}")
+    if pod:
+        filters.append(f"pod={pod}")
+    elif workload:
+        # Every pod the workload owns, including ones a rollout created after the alert fired.
+        # Scoping by namespace alone would let any unrelated alert in `shop` fail this workload's
+        # verification, or keep its "still firing" answer true forever.
+        filters.append(f'pod=~"{workload}-.*"')
+    if node:
+        filters.append(f"node={node}")
+    return filters
+
+
 async def is_firing(
     alertname: str,
     *,
     namespace: str | None = None,
     pod: str | None = None,
     node: str | None = None,
+    workload: str | None = None,
 ) -> bool | None:
     """Is this alert still firing? `None` means unknown, which must escalate.
 
     Matching is by label rather than by fingerprint: after a remediation the pod may be a different
     one, so the fingerprint changes even though the alert is conceptually the same.
     """
-    filters = [f"alertname={alertname}"]
-    if namespace:
-        filters.append(f"namespace={namespace}")
-    if pod:
-        filters.append(f"pod={pod}")
-    if node:
-        filters.append(f"node={node}")
+    filters = [f"alertname={alertname}", *_target_filters(namespace, pod, node, workload)]
 
     alerts = await active_alerts(filters)
     if alerts is None:
@@ -84,7 +97,11 @@ async def is_firing(
 
 
 async def alerts_on_target(
-    namespace: str | None, pod: str | None = None, node: str | None = None
+    namespace: str | None,
+    pod: str | None = None,
+    node: str | None = None,
+    *,
+    workload: str | None = None,
 ) -> list[str] | None:
     """Every alertname currently firing on a target.
 
@@ -92,13 +109,7 @@ async def alerts_on_target(
     action could have caused? Scaling up fixes CPU and can start an OOM cascade on a
     memory-tight node, and only a whole-target check catches that.
     """
-    filters: list[str] = []
-    if namespace:
-        filters.append(f"namespace={namespace}")
-    if pod:
-        filters.append(f"pod={pod}")
-    if node:
-        filters.append(f"node={node}")
+    filters = _target_filters(namespace, pod, node, workload)
 
     alerts = await active_alerts(filters or None)
     if alerts is None:

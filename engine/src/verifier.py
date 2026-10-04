@@ -11,7 +11,9 @@ no automation, because it produces false confidence.
 2. the workload's **golden signals recovered** below their thresholds,
 3. **no new alert** appeared on the same target that the action could have caused.
 
-Anything else is `not_recovered` (compensate and escalate) or `inconclusive` (escalate). There is no
+Anything else is `not_recovered` or `inconclusive`, and both compensate and escalate -- the second
+because a change that could not be shown to work is not left in production on trust. The two stay
+distinct in the record, so the scorecard can tell "it failed" from "we could not tell". There is no
 fourth outcome and no silent success.
 
 ### Why "the alert stopped firing" is not enough
@@ -42,9 +44,8 @@ from config import get_settings
 from db.connection import db_now
 from db.models import RunbookExecution, Verification
 from integrations import alertmanager_client, prometheus_client
-from integrations.prometheus_client import GoldenSignals
 from plan import RemediationPlan
-from runbooks.base import Runbook, SignalWindow
+from runbooks.base import SignalWindow
 
 log = structlog.get_logger(__name__)
 
@@ -64,6 +65,9 @@ RESTART_TOLERANCE = 0
 OOM_TOLERANCE = 0.0
 """Any OOM event inside the window means the memory fix did not hold."""
 
+MIN_WINDOW_SECONDS = 30
+"""Below this, `increase()` over a 15-30s scrape interval has too few samples to mean anything."""
+
 
 @dataclass(frozen=True, slots=True)
 class Verdict:
@@ -80,13 +84,15 @@ class Verdict:
 
     @property
     def needs_compensation(self) -> bool:
-        """Only a definite failure triggers compensation.
+        """Everything short of a proven recovery is undone.
 
-        `inconclusive` escalates *without* compensating: undoing a fix that may well have worked,
-        because a metrics endpoint was unreachable, would turn an observability outage into a second
-        production change.
+        `inconclusive` compensates too. The change was made on the promise that recovery would be
+        demonstrated, and it was not; leaving an unproven change in production is the same bet the
+        watchdog refuses to make when verification never ran at all. The revert returns the target
+        to a state that *is* described -- the one recorded before acting -- and a human decides from
+        there.
         """
-        return self.outcome == "not_recovered"
+        return self.outcome != "remediated"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -99,46 +105,50 @@ class Verdict:
         }
 
 
-async def capture_window(
-    plan: RemediationPlan, *, window: str = "5m"
-) -> tuple[SignalWindow, GoldenSignals]:
+def post_action_window(elapsed_seconds: float) -> str:
+    """The PromQL range covering only time after the action, minus the settle period.
+
+    The settle period is excluded because a rollout replaces pods gradually: the old, broken pods
+    keep restarting for a few seconds after the fix lands, and those restarts are the failure being
+    fixed rather than evidence that the fix failed.
+    """
+    settle = get_settings().verification_settle_seconds
+    return f"{max(int(elapsed_seconds) - settle, MIN_WINDOW_SECONDS)}s"
+
+
+async def observe(plan: RemediationPlan, *, window: str = "5m") -> SignalWindow:
     """Read the target's signals now.
 
-    Called once before acting and once after the window elapses, so `signals_before` and
-    `signals_after` are measured the same way -- otherwise the comparison would be between two
-    different definitions of health.
+    Called once immediately before acting and repeatedly during the verification window, so the
+    before and after windows are measured the same way -- otherwise the comparison would be between
+    two different definitions of health.
     """
+    node = plan.target_name if plan.target_kind == "Node" else None
+    workload = None if node else plan.target_name
+
     signals = await prometheus_client.golden_signals(
-        plan.target_namespace,
-        workload=plan.target_name if plan.target_kind != "Node" else None,
-        window=window,
+        plan.target_namespace, workload=workload, window=window
     )
 
     alert_name = plan.expected_signal.alert_should_clear if plan.expected_signal else None
     firing: bool | None = None
     if alert_name:
         firing = await alertmanager_client.is_firing(
-            alert_name,
-            namespace=plan.target_namespace,
-            node=plan.target_name if plan.target_kind == "Node" else None,
+            alert_name, namespace=plan.target_namespace, node=node, workload=workload
         )
 
     on_target = await alertmanager_client.alerts_on_target(
-        plan.target_namespace,
-        node=plan.target_name if plan.target_kind == "Node" else None,
+        plan.target_namespace, node=node, workload=workload
     )
 
-    return (
-        SignalWindow(
-            alert_firing=firing,
-            restarts=int(signals.restarts) if signals.restarts is not None else None,
-            oom_events=signals.oom_events,
-            throttle_ratio=signals.throttle_ratio,
-            psi_full=signals.psi_full,
-            memory_usage_ratio=signals.memory_usage_ratio,
-            new_alerts=tuple(on_target or ()),
-        ),
-        signals,
+    return SignalWindow(
+        alert_firing=firing,
+        restarts=int(signals.restarts) if signals.restarts is not None else None,
+        oom_events=signals.oom_events,
+        throttle_ratio=signals.throttle_ratio,
+        psi_full=signals.psi_full,
+        memory_usage_ratio=signals.memory_usage_ratio,
+        new_alerts=tuple(on_target or ()),
     )
 
 
@@ -252,6 +262,59 @@ def judge(
     )
 
 
+def judge_early(
+    plan: RemediationPlan,
+    before: SignalWindow,
+    after: SignalWindow,
+    *,
+    extra_failure: str | None = None,
+) -> Verdict | None:
+    """A verdict before the window closes -- but only ever a failure.
+
+    The asymmetry is the point. A fix that has demonstrably failed should be undone now, not after
+    five more minutes of a broken rollback serving errors; that is what makes "auto-reverted in 90
+    seconds" possible. A fix that merely *looks* fine early has not been shown to hold, because
+    `for:` durations lag relapse just as they lag recovery, so success waits for the full window.
+
+    Only definite evidence counts here. The triggering alert is still expected to be firing this
+    early, and the ratio signals are five-minute rates still dominated by the pre-action period, so
+    neither can call a failure yet. Returns `None` to mean "keep watching".
+    """
+    reasons: list[str] = []
+    threshold = get_settings().verification_early_restart_threshold
+
+    if after.restarts is not None and after.restarts >= threshold:
+        reasons.append(
+            f"container restarted {after.restarts} time(s) after the fix "
+            f"(early-failure threshold {threshold})"
+        )
+    if after.oom_events is not None and after.oom_events > OOM_TOLERANCE:
+        reasons.append(f"{after.oom_events:.0f} OOM event(s) after the fix")
+    if extra_failure:
+        reasons.append(extra_failure)
+
+    triggering = plan.expected_signal.alert_should_clear if plan.expected_signal else None
+    caused = tuple(
+        name for name in after.new_alerts if name != triggering and name not in before.new_alerts
+    )
+    if caused:
+        reasons.append(
+            f"new alert(s) appeared on this target that the action could have caused: "
+            f"{', '.join(caused)}"
+        )
+
+    if not reasons:
+        return None
+    return Verdict(
+        outcome="not_recovered",
+        reasons=("failed before the window closed", *reasons),
+        alert_cleared=after.alert_firing is False if after.alert_firing is not None else None,
+        signals_before=_signals_dict(before),
+        signals_after=_signals_dict(after),
+        new_alerts=caused,
+    )
+
+
 def _signals_dict(window: SignalWindow) -> dict[str, float | None]:
     return {
         "restarts": float(window.restarts) if window.restarts is not None else None,
@@ -262,37 +325,21 @@ def _signals_dict(window: SignalWindow) -> dict[str, float | None]:
     }
 
 
-async def verify(
+async def record(
     session: AsyncSession,
     execution: RunbookExecution,
     plan: RemediationPlan,
-    runbook: Runbook,
-    before: SignalWindow,
-) -> Verdict:
-    """Verify one execution and persist the verdict.
+    verdict: Verdict,
+) -> str:
+    """Persist a verdict. Returns the ledger hash of the `verify` entry.
 
-    The caller owns the transaction, so the `verify` ledger entry lands in the same commit as the
-    verification row and the execution's status change.
+    The caller owns the transaction, so the verification row, the ledger entry and whatever the
+    compensator does next all land in one commit -- state and audit cannot diverge.
     """
-    settings = get_settings()
-    window_seconds = (
-        plan.expected_signal.window_seconds
-        if plan.expected_signal
-        else settings.verification_window_seconds
-    )
-
-    after, _ = await capture_window(plan)
-
-    # The runbook's own probe runs on the observed window, so it can assert things the generic
-    # golden signals cannot -- the OOM runbook checks that restartCount genuinely did not move.
-    extra = await runbook.extra_verification(plan, after)
-
-    verdict = judge(plan, before, after, extra_failure=extra)
-
     session.add(
         Verification(
             execution_id=execution.id,
-            window_seconds=window_seconds,
+            window_seconds=window_seconds(plan),
             alert_cleared=verdict.alert_cleared,
             signals_before=verdict.signals_before,
             signals_after=verdict.signals_after,
@@ -303,7 +350,7 @@ async def verify(
     )
     await session.flush()
 
-    await ledger.append(
+    digest = await ledger.append(
         session,
         "verify",
         verdict.to_dict(),
@@ -327,7 +374,15 @@ async def verify(
         reasons=verdict.reasons,
         execution_id=execution.id,
     )
-    return verdict
+    return digest
+
+
+def window_seconds(plan: RemediationPlan) -> int:
+    return (
+        plan.expected_signal.window_seconds
+        if plan.expected_signal
+        else get_settings().verification_window_seconds
+    )
 
 
 def due_at(finished_at: datetime, plan: RemediationPlan) -> datetime:
@@ -337,9 +392,4 @@ def due_at(finished_at: datetime, plan: RemediationPlan) -> datetime:
     with the worker and the verification would never run -- which is exactly the gap the watchdog
     exists to catch.
     """
-    window = (
-        plan.expected_signal.window_seconds
-        if plan.expected_signal
-        else get_settings().verification_window_seconds
-    )
-    return finished_at + timedelta(seconds=window)
+    return finished_at + timedelta(seconds=window_seconds(plan))

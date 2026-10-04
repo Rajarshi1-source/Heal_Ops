@@ -68,6 +68,25 @@ class Settings(BaseSettings):
     verification_window_seconds: int = 300
     verification_deadline_seconds: int = 900
     """The watchdog force-reverts any execution still awaiting verification past this."""
+    verification_poll_seconds: int = 15
+    verification_settle_seconds: int = 30
+    """Excluded from the start of every post-action window: old pods restarting while a rollout
+    replaces them are the failure being fixed, not evidence that the fix failed."""
+    verification_early_after_seconds: int = 60
+    """Failure may be called from here on; success only once the full window has elapsed."""
+    verification_early_restart_threshold: int = 2
+    verify_reclaim_idle_seconds: int = 120
+
+    # --- approvals -----------------------------------------------------------
+    approval_reaper_interval_seconds: int = 30
+    approvals_api_token: SecretStr | None = None
+    """Bearer token for `POST /api/approvals`. Unset means the endpoint refuses every decision and
+    Slack is the only approval path -- an identity asserted in a request body is not an identity."""
+
+    # --- worker --------------------------------------------------------------
+    worker_enabled: bool = True
+    """Run the exec, verify and reaper loops in this process. They only act while holding the
+    Lease; this switch exists so the API can be served without them in tests and the public demo."""
 
     # --- locking and dedup ---------------------------------------------------
     lock_ttl_seconds: int = 120

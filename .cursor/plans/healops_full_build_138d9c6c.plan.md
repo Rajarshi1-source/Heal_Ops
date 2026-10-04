@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: p4-verify
     content: "Phase 4: closed-loop verifier requiring alert-cleared plus recovered golden signals plus no new alerts, the compensator and watchdog CronJob, Slack Bolt AsyncApp mounted on FastAPI with Block Kit builders, and approvals owned by PostgreSQL with an authoritative expires_at, a reaper, and fail-closed can_execute()"
-    status: in_progress
+    status: completed
   - id: p5-runbooks45
     content: "Phase 5: runbook 4 via the pods/resize subresource with success asserted on containerStatuses and refusals for RestartContainer/ceiling/Infeasible, runbook 5 cordon+drain with capacity precheck and PDB awareness, the token-bucket remediation budget, the global circuit breaker with half-open recovery, and the anti-masking guard that files GitHub issues"
     status: pending

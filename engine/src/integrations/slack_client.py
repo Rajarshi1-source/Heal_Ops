@@ -52,7 +52,8 @@ def _get_client() -> Any | None:
         from slack_sdk.web.async_client import AsyncWebClient
 
         token = settings.slack_bot_token
-        assert token is not None  # slack_enabled guarantees this
+        if token is None:  # unreachable while slack_enabled holds; stated rather than asserted
+            return None
         _client = AsyncWebClient(token=token.get_secret_value())
     return _client
 

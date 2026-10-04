@@ -83,6 +83,17 @@ async def db_now(session: AsyncSession) -> datetime:
     return cast(datetime, result.scalar_one())
 
 
+async def db_clock(session: AsyncSession) -> datetime:
+    """The database's wall clock *now*, not at transaction start.
+
+    `now()` is frozen for the life of a transaction, which is exactly right for the ledger and
+    exactly wrong for timing an action inside one: the execution's start and finish would be the
+    same instant, and the verification window would be measured from before the action ran.
+    """
+    result = await session.execute(text("SELECT clock_timestamp()"))
+    return cast(datetime, result.scalar_one())
+
+
 async def ping() -> bool:
     try:
         async with session_scope() as session:

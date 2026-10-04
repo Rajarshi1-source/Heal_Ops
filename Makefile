@@ -85,6 +85,14 @@ deploy: ## Install HealOps and the chaos app into the kind cluster
 	helm upgrade --install alerting-rules charts/alerting-rules --namespace monitoring
 	helm upgrade --install chaos charts/chaos-app --namespace chaos --create-namespace --wait
 
+.PHONY: watchdog
+watchdog: ## Run one watchdog sweep locally (in-cluster it is a CronJob, every minute)
+	cd engine/src && uv run python -m watchdog
+
+.PHONY: watchdog-deploy
+watchdog-deploy: ## Apply the watchdog CronJob to the kind cluster
+	kubectl apply -n $(NAMESPACE) -f k8s/healops/watchdog-cronjob.yaml
+
 .PHONY: demo
 demo: ## Inject the five faults in sequence
 	uv run python chaos-app/injectors/run_demo.py

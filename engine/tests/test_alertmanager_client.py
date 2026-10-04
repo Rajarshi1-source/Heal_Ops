@@ -210,3 +210,30 @@ async def test_unexpected_payload_shape_returns_none() -> None:
         return_value=httpx.Response(200, json={"error": "nope"})
     )
     assert await am.active_alerts() is None
+
+
+# --- workload scoping ----------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_workload_scoping_matches_every_pod_the_workload_owns() -> None:
+    """Namespace-only scoping let any unrelated alert in the namespace fail this verification."""
+    route = respx.get(url__startswith=f"{BASE}/api/v2/alerts").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    await am.alerts_on_target("shop", workload="api")
+
+    query = str(route.calls[0].request.url)
+    assert "pod%3D~%22api-.%2A%22" in query or 'pod=~"api-.*"' in query
+
+
+@respx.mock
+async def test_an_exact_pod_wins_over_the_workload_prefix() -> None:
+    route = respx.get(url__startswith=f"{BASE}/api/v2/alerts").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    await am.is_firing("KubePodCrashLooping", namespace="shop", pod="api-1", workload="api")
+
+    query = str(route.calls[0].request.url)
+    assert "pod%3Dapi-1" in query or "pod=api-1" in query
+    assert "%7E" not in query and "=~" not in query

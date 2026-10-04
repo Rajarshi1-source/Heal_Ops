@@ -1,28 +1,35 @@
 """`POST /api/approvals/{execution_id}` -- the approval decision endpoint.
 
-Serves two callers: the Slack interactivity handler and the dashboard's approve path. Both land here
-so there is exactly one place where a human decision is recorded, one transaction boundary, and one
+Serves the dashboard's approve path; the Slack button reaches the same `approval_manager.resolve()`
+through the Bolt adapter. One place records a human decision, with one transaction boundary and one
 ledger entry format.
 
-**Idempotent by construction.** A double click in Slack, or a retried dashboard request, is one
-decision -- `approval_manager.decide()` returns the original outcome rather than overwriting it.
-That matters more than it looks: without it, two people could race and whoever clicked last would
-win a question the first had already answered.
+**Authenticated, and fail-closed when unconfigured.** The decision body names who decided, and
+a name in a request body is a claim, not an identity. So the endpoint requires a bearer token that
+only the dashboard's server-side Route Handler holds; with no token configured it refuses every
+decision, and Slack -- whose requests Bolt verifies against the signing secret -- is the only way to
+approve.
+
+**Idempotent by construction.** A double click, or a retried request, is one decision:
+`resolve()` returns the original outcome rather than overwriting it, and only the call that moved
+the execution out of `awaiting_approval` enqueues it.
 
 Granting approval does **not** execute anything here. It records the decision and enqueues the
 execution, so the act of approving cannot block on a Kubernetes call and a slow cluster cannot make
-Slack think the click failed.
+the click look like it failed.
 """
 
 from __future__ import annotations
 
+import hmac
 from typing import Annotated, Literal
 
 import structlog
-from fastapi import APIRouter, Body, HTTPException, status
+from fastapi import APIRouter, Body, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from cache import streams
+from config import get_settings
 from core import approval_manager
 from db.connection import transaction
 from db.models import RunbookExecution
@@ -33,7 +40,7 @@ router = APIRouter(tags=["approvals"])
 
 class ApprovalDecision(BaseModel):
     decision: Literal["approve", "reject"]
-    decided_by: str = Field(description="Slack user id, or the dashboard's authenticated identity.")
+    decided_by: str = Field(description="The dashboard's authenticated identity.")
     slack_message_ts: str | None = None
     slack_channel: str | None = None
 
@@ -46,6 +53,25 @@ class ApprovalResult(BaseModel):
     enqueued: bool
 
 
+def require_approver(authorization: str | None) -> None:
+    """Constant-time bearer check. No configured token means no caller is trusted."""
+    settings = get_settings()
+    if settings.read_only:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="this deployment is read-only")
+
+    expected = settings.approvals_api_token
+    if expected is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="approvals via the API are disabled; decide from the Slack card",
+        )
+
+    scheme, _, token = (authorization or "").partition(" ")
+    presented = token if scheme.lower() == "bearer" else ""
+    if not hmac.compare_digest(presented, expected.get_secret_value()):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid or missing token")
+
+
 @router.post(
     "/api/approvals/{execution_id}",
     summary="Record a human approval decision",
@@ -54,42 +80,33 @@ class ApprovalResult(BaseModel):
 async def decide(
     execution_id: int,
     body: Annotated[ApprovalDecision, Body()],
+    authorization: Annotated[str | None, Header()] = None,
 ) -> ApprovalResult:
+    require_approver(authorization)
     approved = body.decision == "approve"
 
     async with transaction() as session:
-        execution = await session.get(RunbookExecution, execution_id)
+        execution = await session.get(RunbookExecution, execution_id, with_for_update=True)
         if execution is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"no execution {execution_id}",
             )
 
-        authorisation = await approval_manager.decide(
+        resolution = await approval_manager.resolve(
             session,
-            execution_id,
+            execution,
             approved=approved,
             decided_by=body.decided_by,
             slack_message_ts=body.slack_message_ts,
             slack_channel=body.slack_channel,
         )
+        incident_id = execution.incident_id
 
-        if not authorisation.allowed:
-            # Rejected, expired, or already decided. The execution is closed out rather than left
-            # sitting in `awaiting_approval` forever.
-            if execution.status == "awaiting_approval":
-                execution.status = "rejected" if not approved else "escalated"
-            enqueued = False
-        else:
-            # Approved. Hand it to a worker rather than executing inline, so the click returns
-            # immediately and a slow cluster cannot look like a failed button.
-            execution.status = "queued"
-            enqueued = True
-
-    if enqueued:
+    if resolution.enqueue:
+        # After commit: a worker that picks this up must find the `queued` status already durable.
         await streams.enqueue(
-            "execute_approved",
-            {"execution_id": execution_id, "incident_id": execution.incident_id},
+            "execute_approved", {"execution_id": execution_id, "incident_id": incident_id}
         )
 
     log.info(
@@ -97,15 +114,16 @@ async def decide(
         execution_id=execution_id,
         decision=body.decision,
         decided_by=body.decided_by,
-        allowed=authorisation.allowed,
+        allowed=resolution.authorisation.allowed,
+        enqueued=resolution.enqueue,
     )
 
     return ApprovalResult(
         execution_id=execution_id,
-        status="approved" if authorisation.allowed else body.decision,
-        allowed=authorisation.allowed,
-        detail=authorisation.reason,
-        enqueued=enqueued,
+        status=resolution.execution_status,
+        allowed=resolution.authorisation.allowed,
+        detail=resolution.authorisation.reason,
+        enqueued=resolution.enqueue,
     )
 
 
@@ -116,9 +134,9 @@ async def decide(
 async def read(execution_id: int) -> dict[str, object]:
     """Report whether this execution may proceed.
 
-    Reads PostgreSQL, not the cache. The dashboard renders the countdown from `expires_at` here
-    rather than computing it client-side from a duration, because the database owns expiry and a
-    browser clock would disagree with it.
+    Reads PostgreSQL, not the cache. The dashboard renders the countdown from `expires_at` in the
+    database rather than computing it client-side from a duration, because the database owns expiry
+    and a browser clock would disagree with it.
     """
     async with transaction() as session:
         authorisation = await approval_manager.can_execute(session, execution_id)

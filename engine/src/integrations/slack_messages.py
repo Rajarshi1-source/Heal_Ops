@@ -16,9 +16,14 @@ catching its own mistake, and that is the number the project is proudest of.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from plan import Durability, RemediationPlan
+
+if TYPE_CHECKING:
+    from compensator import CompensationOutcome
+    from policy import PolicyDecision
+    from verifier import Verdict
 
 Block = dict[str, Any]
 
@@ -192,13 +197,16 @@ def approval_expired(plan: RemediationPlan) -> list[Block]:
 # --- outcomes -------------------------------------------------------------------------------------
 
 
-def verification_success(plan: RemediationPlan, verdict: Any) -> list[Block]:
+def verification_success(
+    plan: RemediationPlan, verdict: Verdict, *, execution_id: int | None = None
+) -> list[Block]:
     """Success, with the evidence.
 
     The verification line is the point of this card. "Fixed" on its own is what Rev 1 posted; this
-    says *how it knows*.
+    says *how it knows*. The feedback buttons ride along because this is the moment a human can
+    still say "that was the wrong fix".
     """
-    return [
+    blocks = [
         _header(f"{_ICON['remediated']} Incident remediated"),
         _section(f"*{plan.summary}*"),
         _section("*Verified*\n" + "\n".join(f"• {reason}" for reason in verdict.reasons)),
@@ -214,51 +222,88 @@ def verification_success(plan: RemediationPlan, verdict: Any) -> list[Block]:
         ),
         _context("Success means the incident is over, not that the API call returned 200."),
     ]
+    if execution_id is not None:
+        blocks.append(feedback_prompt(execution_id))
+    return blocks
 
 
-def verification_reverted(plan: RemediationPlan, verdict: Any, compensation: Any) -> list[Block]:
+def verification_reverted(
+    plan: RemediationPlan, verdict: Verdict, compensation: CompensationOutcome
+) -> list[Block]:
     """The card the project is proudest of: the system catching its own mistake.
 
-    Framed as a correction rather than a failure, because that is what it is.
+    Framed as a correction rather than a failure, because that is what it is. `inconclusive` gets
+    the same card with different words: a change that could not be shown to work is not left in
+    production on trust, and the reader should know which of the two happened.
     """
-    return [
-        _header(f"{_ICON['reverted']} Remediation reverted itself"),
-        _section(
-            f"*{plan.summary}*\n"
+    if verdict.outcome == "inconclusive":
+        headline = (
+            "The fix was applied, but recovery could not be confirmed — a signal it depends on was "
+            "unavailable. A change that cannot be shown to work is not left in production, so the "
+            "undo registered before acting has been executed."
+        )
+        why = "*Why recovery could not be confirmed*"
+    else:
+        headline = (
             "The fix was applied, verification found it had not worked, and the compensation "
             "registered before acting has been executed."
-        ),
-        _section("*Why it failed*\n" + "\n".join(f"• {r}" for r in verdict.reasons)),
+        )
+        why = "*Why it failed*"
+
+    return [
+        _header(f"{_ICON['reverted']} Remediation reverted itself"),
+        _section(f"*{plan.summary}*\n{headline}"),
+        _section(why + "\n" + "\n".join(f"• {r}" for r in verdict.reasons)),
         _section(f"*Compensation*\n{compensation.detail}"),
         _fields(
             [
                 ("Target", f"`{plan.target_key}`"),
                 ("Runbook", f"`{plan.runbook}`"),
+                ("Verdict", f"`{verdict.outcome}`"),
                 ("Outcome", "reverted — escalating to a human"),
             ]
         ),
-        _context("cc <!subteam^oncall> · the cluster is back to its pre-remediation state"),
-    ]
-
-
-def verification_inconclusive(plan: RemediationPlan, verdict: Any) -> list[Block]:
-    """Neither success nor failure, and deliberately not compensated.
-
-    Reverting a fix that may have worked, because a metrics endpoint was unreachable, would turn an
-    observability outage into a second production change.
-    """
-    return [
-        _header(f"{_ICON['inconclusive']} Verification inconclusive"),
-        _section(f"*{plan.summary}*"),
-        _section("*Why*\n" + "\n".join(f"• {r}" for r in verdict.reasons)),
         _context(
-            "The fix was left in place and escalated. A missing signal is never a healthy signal, "
-            "but it is also not grounds for a second change."
+            "cc <!subteam^oncall> · the cluster is back to its pre-remediation state"
+            + _evidence(compensation)
         ),
     ]
 
 
-def revert_failed(plan: RemediationPlan, compensation: Any) -> list[Block]:
+def watchdog_reverted(plan: RemediationPlan, compensation: CompensationOutcome) -> list[Block]:
+    """Verification never finished, so the dead-man's switch undid the change.
+
+    Something upstream failed -- most likely the engine died mid-window -- so this pages rather
+    than informs. The revert itself is the system working as designed.
+    """
+    return [
+        _header(f"{_ICON['reverted']} Watchdog reverted an unverified change"),
+        _section(
+            f"*{plan.summary}*\nVerification never completed, so the change could not be shown to "
+            "work. The undo registered before acting has been executed."
+        ),
+        _section(f"*Compensation*\n{compensation.detail}"),
+        _fields([("Target", f"`{plan.target_key}`"), ("Runbook", f"`{plan.runbook}`")]),
+        _context(
+            "cc <!subteam^oncall> · the watchdog acting means the engine did not finish its own "
+            "work — worth finding out why" + _evidence(compensation)
+        ),
+    ]
+
+
+def execution_failed(plan: RemediationPlan, detail: str) -> list[Block]:
+    """The action did not apply -- distinct from a fix that applied and did not work."""
+    return [
+        _header(f"{_ICON['escalated']} Remediation could not be applied"),
+        _section(f"*{plan.summary}*"),
+        _section(f"*Detail*\n{detail}"),
+        _context(
+            f"`{plan.target_key}` · nothing was verified because nothing was changed. Escalated."
+        ),
+    ]
+
+
+def revert_failed(plan: RemediationPlan, compensation: CompensationOutcome) -> list[Block]:
     """The worst case: the fix failed AND the undo failed. Page immediately."""
     return [
         _header(f"{_ICON['revert_failed']} COMPENSATION FAILED"),
@@ -269,8 +314,17 @@ def revert_failed(plan: RemediationPlan, compensation: Any) -> list[Block]:
         ),
         _section(f"*Compensation error*\n`{compensation.detail}`"),
         _fields([("Target", f"`{plan.target_key}`"), ("Runbook", f"`{plan.runbook}`")]),
-        _context("cc <!subteam^oncall> — manual intervention required. Nothing automated is left."),
+        _context(
+            "cc <!subteam^oncall> — manual intervention required. Nothing automated is left."
+            + _evidence(compensation)
+        ),
     ]
+
+
+def _evidence(compensation: CompensationOutcome) -> str:
+    if not compensation.ledger_hash:
+        return ""
+    return f" · ledger `{compensation.ledger_hash[:16]}`"
 
 
 def refusal(plan: RemediationPlan) -> list[Block]:
@@ -283,7 +337,7 @@ def refusal(plan: RemediationPlan) -> list[Block]:
     ]
 
 
-def policy_denied(plan: RemediationPlan, decision: Any) -> list[Block]:
+def policy_denied(plan: RemediationPlan, decision: PolicyDecision) -> list[Block]:
     """Policy blocked it, with the rule id so the guardrail is traceable to its pull request."""
     rules = "\n".join(
         f"• `{rule}` — {message}"

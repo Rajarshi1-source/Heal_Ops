@@ -84,7 +84,11 @@ shadow_agreement_ratio = Gauge(
 )
 
 # --- the watchdog and the audit chain -----------------------------------------------------------
-watchdog_actions_total = Counter(
+# A gauge read from the ledger on every engine scrape, not a counter incremented in the watchdog:
+# the watchdog is a CronJob that lives for seconds and is never scraped, so a counter in its process
+# would always read zero and the alert on it could never fire. The count only ever grows, so
+# `increase()` over it behaves exactly as it would on a counter.
+watchdog_actions_total = Gauge(
     "healops_watchdog_actions_total",
     "Force-reverts and expiries performed by the watchdog. Any value above zero is worth a look.",
 )

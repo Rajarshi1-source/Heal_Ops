@@ -1,0 +1,71 @@
+# The watchdog: a dead-man's switch for remediation.
+#
+# Deliberately a separate CronJob, not a loop inside the engine. The failure it exists to catch is
+# the engine dying between execute() and verify(); a sweeper living in that same process would die
+# with it. It needs only PostgreSQL and the Kubernetes API -- every plan and its compensation are
+# rehydrated from the database, so it has no knowledge of, or dependency on, the process that acted.
+#
+# Phase 7's Helm chart templates this from values; until then it is applied directly
+# (`make watchdog-deploy`). The image is the engine image, pinned -- never `latest`.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: healops-watchdog
+  labels:
+    app.kubernetes.io/name: healops
+    app.kubernetes.io/component: watchdog
+    # HealOps never remediates HealOps. Enforced by the policy file; labelled here as well.
+    healops.io/remediation: disabled
+  annotations:
+    healops.io/remediation: disabled
+spec:
+  schedule: "* * * * *"
+  # Overlapping sweeps are safe (rows are taken FOR UPDATE SKIP LOCKED) but pointless; a sweep
+  # still running after a minute is itself a signal worth an alert, not a reason to start another.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 30
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 0                # the next minute is the retry
+      activeDeadlineSeconds: 55
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: healops
+            app.kubernetes.io/component: watchdog
+        spec:
+          restartPolicy: Never
+          # Compensation runs the same API calls the runbooks do, so it needs the engine's RBAC.
+          serviceAccountName: healops-engine
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: watchdog
+              image: healops-engine:0.1.0
+              imagePullPolicy: IfNotPresent
+              workingDir: /app/engine/src
+              command: ["python", "-m", "watchdog"]
+              envFrom:
+                - secretRef:
+                    name: healops-engine
+              env:
+                - name: HEALOPS_WORKER_ENABLED
+                  value: "false"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 96Mi
+                limits:
+                  memory: 192Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
