@@ -1,0 +1,5 @@
+# Recorded evidence is stored and checked byte for byte: the replay files are golden files, and a
+# bundle is identified by its own hash. Line-ending conversion on checkout would make an untouched
+# record fail its own verification, so Git keeps these exactly as written.
+evidence/** -text
+corpus/** -text
