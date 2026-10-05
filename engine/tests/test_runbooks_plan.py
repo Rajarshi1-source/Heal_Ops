@@ -22,8 +22,9 @@ from bundle import (
     Target,
 )
 from plan import Durability, Reversibility
+from pricing import replica_cost
 from runbooks import load_all
-from runbooks.cpu_scale_up import INR_PER_REPLICA_MONTH, CpuScaleUp
+from runbooks.cpu_scale_up import CpuScaleUp
 from runbooks.crashloop_rollback import CrashLoopRollback
 from runbooks.disk_cleanup import DiskCleanup
 
@@ -136,12 +137,39 @@ class TestCrashLoopRollback:
 
         Rolling back onto an equally broken revision is the exact case Rev 1 recorded as a success.
         """
+        target = deployment(
+            previous_image="ghcr.io/o/api:v2",
+            template_digest="a" * 64,
+            previous_template_digest="a" * 64,
+        )
+        p = self.runbook.plan(bundle("KubePodCrashLooping", target), target)
+
+        assert p.is_refusal
+        assert "same pod template" in (p.refusal_reason or "")
+        assert "equally broken revision" in (p.refusal_reason or "")
+
+    def test_without_digests_the_same_image_is_still_refused(self) -> None:
+        # The conservative fallback, for a bundle captured before template digests existed.
         target = deployment(previous_image="ghcr.io/o/api:v2")
         p = self.runbook.plan(bundle("KubePodCrashLooping", target), target)
 
         assert p.is_refusal
-        assert "same image" in (p.refusal_reason or "")
-        assert "config or dependency" in (p.refusal_reason or "")
+
+    def test_a_bad_config_on_the_same_image_is_rolled_back(self) -> None:
+        """Regression: the image rule refused the commonest bad deploy -- an env or flag change.
+
+        Found by the chaos suite: crashy-api's bad revision only adds CRASH_AFTER, so the old rule
+        refused the very fault the runbook exists to fix.
+        """
+        target = deployment(
+            previous_image="ghcr.io/o/api:v2",
+            template_digest="a" * 64,
+            previous_template_digest="b" * 64,
+        )
+        p = self.runbook.plan(bundle("KubePodCrashLooping", target), target)
+
+        assert not p.is_refusal
+        assert p.actions[0].body["to_revision"] == target.previous_revision
 
     def test_refuses_a_statefulset(self) -> None:
         # Policy also denies StatefulSets, but the runbook declines on its own too: only Deployments
@@ -333,7 +361,7 @@ class TestCpuScaleUp:
         """Cost is a first-class approval criterion, not an afterthought."""
         target = deployment(replicas=3, autoscaler=None)
         p = self.runbook.plan(bundle("HighPodCPU", target), target)
-        assert p.cost_delta_inr_month == pytest.approx(2 * INR_PER_REPLICA_MONTH)
+        assert p.cost_delta_inr_month == pytest.approx(2 * replica_cost(target.containers))
 
     def test_scale_up_expires_on_its_own(self) -> None:
         # Load spikes end. Automation that leaves a workload permanently oversized has made a
@@ -538,3 +566,16 @@ class TestRegistry:
     def test_unknown_alert_has_no_runbook(self) -> None:
         # An unrecognised alert escalates rather than being force-fitted to a runbook.
         assert load_all().for_alert("SomethingNobodyPlannedFor") is None
+
+
+def test_disk_recovery_judges_the_filesystem_the_logs_lived_on() -> None:
+    """Regression, found on the kind cluster: the check read only `mountpoint="/"`, which a kind
+    node does not expose, so a cleanup that freed 60 MiB was judged inconclusive and undone."""
+    from runbooks.disk_cleanup import disk_used_query
+
+    query = disk_used_query("w2", ["/var/log/chaos/a.log", "/var/log/b.log"])
+    order = [m.split('"')[0] for m in query.split('mountpoint="')[1:]]
+    # Longest first, each term once per filesystem (avail and size), every parent considered.
+    assert order[::2] == ["/var/log/chaos", "/var/log", "/var", "/"]
+    assert query.count(" or ") == 3
+    assert 'node="w2"' in query

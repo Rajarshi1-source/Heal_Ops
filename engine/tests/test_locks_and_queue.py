@@ -107,6 +107,15 @@ async def test_first_delivery_is_not_deduplicated(redis_client_fixture: Any) -> 
     assert await dedup_store.seen_recently("fp-1") is True
 
 
+async def test_a_flapping_alert_gets_a_plan_for_its_new_incident(redis_client_fixture: Any) -> None:
+    """Regression, found on the kind cluster: a fingerprint that fires, resolves and fires again
+    opens a second incident -- and dedup on the fingerprint alone gave it no plan job, so it sat
+    `open` forever. Redelivery into the SAME incident is still collapsed."""
+    assert await dedup_store.seen_recently("fp-flap", incident_id=1) is False
+    assert await dedup_store.seen_recently("fp-flap", incident_id=1) is True
+    assert await dedup_store.seen_recently("fp-flap", incident_id=2) is False
+
+
 async def test_dedup_is_per_fingerprint(redis_client_fixture: Any) -> None:
     """Why dedup alone cannot handle a storm.
 
@@ -224,3 +233,24 @@ async def test_depth_reports_zero_for_a_missing_stream(redis_client_fixture: Any
     # Readiness and the /metrics endpoint both call this before anything has been queued.
     assert await streams.dlq_depth() == 0
     assert await streams.depth() == 0
+
+
+async def test_a_long_poll_never_blocks_past_the_socket_timeout(
+    redis_client_fixture: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A 15 s verification poll used to block for 15 s on a client whose socket gives up at 5 s.
+    from cache import redis_client
+
+    await streams.ensure_groups()
+    seen: list[int] = []
+    original = redis_client_fixture.xreadgroup
+
+    async def spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs["block"])
+        return await original(*args, **{**kwargs, "block": 10})
+
+    monkeypatch.setattr(redis_client_fixture, "xreadgroup", spy)
+    await streams.read("verify", "worker-1", block_ms=15_000)
+
+    assert seen == [streams.MAX_BLOCK_MS]
+    assert streams.MAX_BLOCK_MS < redis_client.SOCKET_TIMEOUT_SECONDS * 1000

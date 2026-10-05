@@ -19,6 +19,11 @@ from typer.testing import CliRunner
 from cli.healopsctl.main import EXIT_DENIED, EXIT_ERROR, EXIT_OK, EXIT_REFUSED, app
 
 CORPUS = Path(__file__).resolve().parents[2] / "corpus"
+# Generated cases, not hand-written fixtures: a bad config rollout the engine really fixed, a
+# StatefulSet it really refused, and an opted-out workload whose resize policy really denied.
+ALLOWED = "e2e-crashloop-bad-config.json"
+REFUSED = "e2e-crashloop-statefulset.json"
+DENIED = "oom-opt-out.json"
 runner = CliRunner()
 
 
@@ -30,13 +35,13 @@ def run(*args: str) -> object:
 
 
 def test_allowed_plan_exits_zero() -> None:
-    result = run(str(CORPUS / "crashloop-allow.json"))
+    result = run(str(CORPUS / ALLOWED))
     assert result.exit_code == EXIT_OK, result.output
 
 
 def test_allowed_plan_shows_the_action_and_the_undo() -> None:
     """A reviewer should see the literal patch and how it would be reversed."""
-    output = run(str(CORPUS / "crashloop-allow.json")).output
+    output = run(str(CORPUS / ALLOWED)).output
 
     assert "ALLOW" in output
     assert "rollout_undo" in output
@@ -45,7 +50,7 @@ def test_allowed_plan_shows_the_action_and_the_undo() -> None:
 
 
 def test_allowed_plan_shows_the_safety_metadata() -> None:
-    output = run(str(CORPUS / "crashloop-allow.json")).output
+    output = run(str(CORPUS / ALLOWED)).output
 
     assert "blast radius" in output
     assert "reversible" in output
@@ -58,13 +63,13 @@ def test_allowed_plan_shows_the_safety_metadata() -> None:
 def test_allowed_plan_shows_the_expected_recovery_signal() -> None:
     # Committing to the recovery criterion up front is what stops verification hunting for any
     # metric that happens to look better afterwards.
-    output = run(str(CORPUS / "crashloop-allow.json")).output
+    output = run(str(CORPUS / ALLOWED)).output
     assert "alert should clear" in output
     assert "KubePodCrashLooping" in output
 
 
 def test_allowed_plan_shows_the_determinism_digest() -> None:
-    output = run(str(CORPUS / "crashloop-allow.json")).output
+    output = run(str(CORPUS / ALLOWED)).output
     assert "determinism digest" in output
 
 
@@ -73,12 +78,12 @@ def test_allowed_plan_shows_the_determinism_digest() -> None:
 
 def test_runbook_refusal_exits_two() -> None:
     """A refusal is a distinct outcome, not a success and not a crash."""
-    result = run(str(CORPUS / "refuse-statefulset.json"))
+    result = run(str(CORPUS / REFUSED))
     assert result.exit_code == EXIT_REFUSED
 
 
 def test_refusal_states_its_reason() -> None:
-    output = run(str(CORPUS / "refuse-statefulset.json")).output
+    output = run(str(CORPUS / REFUSED)).output
 
     assert "REFUSED" in output
     assert "not rollable" in output
@@ -87,7 +92,7 @@ def test_refusal_states_its_reason() -> None:
 
 
 def test_refusal_produces_no_actions() -> None:
-    result = runner.invoke(app, ["plan", str(CORPUS / "refuse-statefulset.json"), "--json"])
+    result = runner.invoke(app, ["plan", str(CORPUS / REFUSED), "--json"])
     payload = json.loads(result.output)
     assert payload["plan"]["actions"] == []
     assert payload["plan"]["refusal_reason"]
@@ -98,12 +103,12 @@ def test_refusal_produces_no_actions() -> None:
 
 def test_policy_denial_exits_three() -> None:
     """Distinct from a refusal: the runbook was willing, the policy was not."""
-    result = run(str(CORPUS / "refuse-opt-out.json"))
+    result = run(str(CORPUS / DENIED))
     assert result.exit_code == EXIT_DENIED
 
 
 def test_denial_names_the_rule_and_shows_its_message() -> None:
-    output = run(str(CORPUS / "refuse-opt-out.json")).output
+    output = run(str(CORPUS / DENIED)).output
 
     assert "DENY" in output.upper()
     assert "deny-kill-switch" in output
@@ -113,8 +118,8 @@ def test_denial_names_the_rule_and_shows_its_message() -> None:
 
 def test_denial_still_shows_the_plan_it_would_have_run() -> None:
     """Seeing what was blocked is the point of showing a denial rather than just refusing."""
-    output = run(str(CORPUS / "refuse-opt-out.json")).output
-    assert "rollout_undo" in output
+    output = run(str(CORPUS / DENIED)).output
+    assert "resize" in output
     assert "nothing was executed" in output
 
 
@@ -126,13 +131,13 @@ def test_shadow_promotion_requires_approval() -> None:
 
     The same bundle that is auto-approved at `auto` needs a human at `shadow`.
     """
-    output = run(str(CORPUS / "crashloop-allow.json"), "--promotion", "shadow").output
+    output = run(str(CORPUS / ALLOWED), "--promotion", "shadow").output
     assert "REQUIRE_APPROVAL" in output
     assert "approve-not-promoted" in output
 
 
 def test_auto_promotion_allows_the_same_bundle() -> None:
-    output = run(str(CORPUS / "crashloop-allow.json"), "--promotion", "auto").output
+    output = run(str(CORPUS / ALLOWED), "--promotion", "auto").output
     assert "ALLOW" in output
 
 
@@ -140,7 +145,7 @@ def test_auto_promotion_allows_the_same_bundle() -> None:
 
 
 def test_json_output_carries_the_plan_and_the_decision() -> None:
-    result = runner.invoke(app, ["plan", str(CORPUS / "crashloop-allow.json"), "--json"])
+    result = runner.invoke(app, ["plan", str(CORPUS / ALLOWED), "--json"])
     payload = json.loads(result.output)
 
     assert payload["plan"]["runbook"] == "crashloop_rollback"
@@ -151,7 +156,7 @@ def test_json_output_carries_the_plan_and_the_decision() -> None:
 def test_json_output_is_reusable_as_evidence() -> None:
     # The same canonical shape the ledger and the plans table store, so a CLI dump and a database
     # row describe the incident identically.
-    result = runner.invoke(app, ["plan", str(CORPUS / "crashloop-allow.json"), "--json"])
+    result = runner.invoke(app, ["plan", str(CORPUS / ALLOWED), "--json"])
     plan = json.loads(result.output)["plan"]
 
     for field in (
@@ -183,7 +188,7 @@ def test_unreadable_bundle_exits_with_an_error(tmp_path: Path) -> None:
 
 def test_unknown_alert_escalates_rather_than_guessing(tmp_path: Path) -> None:
     """An alert no runbook answers must escalate, not be force-fitted to the nearest runbook."""
-    bundle = json.loads((CORPUS / "crashloop-allow.json").read_text(encoding="utf-8"))
+    bundle = json.loads((CORPUS / ALLOWED).read_text(encoding="utf-8"))
     bundle["cause_alert"]["alertname"] = "SomethingNobodyPlannedFor"
     path = tmp_path / "unknown.json"
     path.write_text(json.dumps(bundle), encoding="utf-8")
@@ -197,14 +202,16 @@ def test_unknown_alert_escalates_rather_than_guessing(tmp_path: Path) -> None:
 # --- the corpus itself ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["crashloop-allow", "refuse-statefulset", "refuse-opt-out"])
-def test_committed_bundles_are_loadable_and_labelled(name: str) -> None:
-    """Every committed bundle must be labelled, or the decision eval cannot grade it."""
+@pytest.mark.parametrize("path", sorted(CORPUS.glob("*.json")), ids=lambda p: p.stem)
+def test_committed_bundles_are_loadable_and_labelled(path: Path) -> None:
+    """Every committed bundle must be labelled, or the decision eval cannot grade it -- and must say
+    how it was made: end to end from a real incident, or a live target with a synthesised alert."""
     from bundle import IncidentBundle
 
-    bundle = IncidentBundle.from_json((CORPUS / f"{name}.json").read_text(encoding="utf-8"))
-    assert bundle.is_labelled, f"{name} has no expected_runbook/expected_effect"
-    assert bundle.label_note, f"{name} has no note explaining why"
+    bundle = IncidentBundle.from_json(path.read_text(encoding="utf-8"))
+    assert bundle.is_labelled, f"{path.stem} has no expected_runbook/expected_effect"
+    assert bundle.label_note, f"{path.stem} has no note explaining why"
+    assert "captured end to end" in bundle.label_note or "captured live" in bundle.label_note
 
 
 def test_the_corpus_contains_must_refuse_cases() -> None:
@@ -224,7 +231,7 @@ def test_the_corpus_contains_must_refuse_cases() -> None:
 
 def test_planning_is_deterministic_across_runs() -> None:
     """Same bundle in, byte-identical plan out. This is the determinism gate's anchor."""
-    first = runner.invoke(app, ["plan", str(CORPUS / "crashloop-allow.json"), "--json"])
-    second = runner.invoke(app, ["plan", str(CORPUS / "crashloop-allow.json"), "--json"])
+    first = runner.invoke(app, ["plan", str(CORPUS / ALLOWED), "--json"])
+    second = runner.invoke(app, ["plan", str(CORPUS / ALLOWED), "--json"])
 
     assert json.loads(first.output)["plan"] == json.loads(second.output)["plan"]

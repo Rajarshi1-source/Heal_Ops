@@ -1,0 +1,155 @@
+# Policy gate cases. The policy file is code, so it gets tested: EVERY rule in
+# policy/remediation.yaml needs at least one `must_deny` case (the rule fires) and one `must_allow`
+# case (it does not). `evals/policy_eval.py` fails the merge when a rule has neither, or when any
+# expectation is wrong -- so adding a guardrail without saying what it blocks and what it lets
+# through is a red build, not a review comment.
+#
+# "deny" here means "the rule stops unattended execution": a deny rule blocks the plan, a
+# require_approval rule hands it to a human. Each case is a set of overrides on `baseline`, which
+# itself must fire no rule at all.
+#
+# A good must_allow case is a near miss -- the value just on the safe side of the line -- because a
+# rule that also fires on the near miss is broader than its message claims.
+
+baseline:
+  plan:
+    runbook: crashloop_rollback
+    target_kind: Deployment
+    target_name: api
+    target_namespace: shop
+    reversibility: reversible
+    durability: ephemeral
+    ttl_seconds: 7200
+    confidence: 0.95
+    cost_delta_inr_month: 0.0
+    blast_radius: { pods: 3, nodes: 0, namespaces: [shop], user_facing: false }
+  target: { kind: Deployment, name: api, namespace: shop, replicas: 3, annotations: {} }
+  budget: { used_actions: 0, max_actions: 8, breaker_state: closed }
+  promotion: { mode: auto }
+
+rules:
+  # --- deny ----------------------------------------------------------------------------------------
+  deny-irreversible:
+    must_deny:
+      - { plan: { reversibility: irreversible } }
+    must_allow:
+      - { plan: { reversibility: partially_reversible }, promotion: { mode: auto } }
+
+  deny-self-remediation:
+    must_deny:
+      - { plan: { target_namespace: healops }, target: { namespace: healops } }
+      - plan:
+          target_kind: Node
+          target_name: worker-1
+          target_namespace: null
+          blast_radius: { pods: 2, nodes: 1, namespaces: [healops, shop], user_facing: false }
+    must_allow:
+      - plan:
+          target_kind: Node
+          target_name: worker-2
+          target_namespace: null
+          blast_radius: { pods: 2, nodes: 1, namespaces: [shop, chaos], user_facing: false }
+
+  deny-outside-allowed-namespaces:
+    must_deny:
+      - { plan: { target_namespace: kube-system }, target: { namespace: kube-system } }
+    must_allow:
+      - { plan: { target_namespace: payments }, target: { namespace: payments } }
+      # Nodes have no namespace; the allow-list must not read "" as "not allowed".
+      - plan: { target_kind: Node, target_name: worker-2, target_namespace: null }
+        target: { kind: Node, name: worker-2, namespace: null, replicas: 1 }
+
+  deny-protected-workloads:
+    must_deny:
+      - { plan: { target_kind: StatefulSet }, target: { kind: StatefulSet } }
+      - { plan: { target_name: db-orders } }
+    must_allow:
+      - { plan: { target_name: orders-db } }
+
+  deny-kill-switch:
+    must_deny:
+      - target: { annotations: { healops.io/remediation: disabled } }
+    must_allow:
+      # Regression: absent annotations used to raise in CEL, which the gate reads as a deny.
+      - target: { annotations: {} }
+      - target: { annotations: { healops.io/remediation: enabled } }
+
+  deny-single-replica-disruptive:
+    must_deny:
+      - { plan: { reversibility: partially_reversible }, target: { replicas: 1 } }
+    must_allow:
+      - { plan: { reversibility: reversible }, target: { replicas: 1 } }
+      - plan: { target_kind: Node, target_namespace: null, reversibility: partially_reversible }
+        target: { kind: Node, replicas: 1 }
+
+  deny-budget-exhausted:
+    must_deny:
+      - { budget: { used_actions: 8, max_actions: 8 } }
+    must_allow:
+      - { budget: { used_actions: 7, max_actions: 8 } }
+
+  deny-breaker-open:
+    must_deny:
+      - { budget: { breaker_state: open } }
+    must_allow:
+      - { budget: { breaker_state: half_open } }
+
+  # --- require approval ----------------------------------------------------------------------------
+  approve-not-promoted:
+    must_deny:
+      - { promotion: { mode: approval } }
+      - { promotion: { mode: shadow } }
+    must_allow:
+      - { promotion: { mode: auto } }
+
+  approve-large-blast-radius:
+    must_deny:
+      - plan: { blast_radius: { pods: 26, nodes: 0, namespaces: [shop], user_facing: false } }
+    must_allow:
+      # Exactly 25 is allowed: the rule is `> 25`.
+      - plan: { blast_radius: { pods: 25, nodes: 0, namespaces: [shop], user_facing: false } }
+
+  approve-node-scoped:
+    must_deny:
+      - plan: { target_kind: Node, target_name: worker-2, target_namespace: null }
+        target: { kind: Node, name: worker-2, namespace: null, replicas: 1 }
+    must_allow:
+      - { plan: { target_kind: Deployment } }
+
+  approve-costly:
+    must_deny:
+      - { plan: { cost_delta_inr_month: 500.01 } }
+    must_allow:
+      - { plan: { cost_delta_inr_month: 500.0 } }
+
+  approve-low-confidence:
+    must_deny:
+      - { plan: { confidence: 0.79 } }
+    must_allow:
+      - { plan: { confidence: 0.80 } }
+
+  approve-partially-reversible:
+    must_deny:
+      - { plan: { reversibility: partially_reversible } }
+    must_allow:
+      - { plan: { reversibility: reversible } }
+
+  approve-durable-change:
+    must_deny:
+      - { plan: { durability: durable, ttl_seconds: null } }
+    must_allow:
+      - { plan: { durability: ephemeral, ttl_seconds: 600 } }
+
+  approve-breaker-half-open:
+    must_deny:
+      - { budget: { breaker_state: half_open } }
+    must_allow:
+      - { budget: { breaker_state: closed } }
+
+  approve-budget-nearly-exhausted:
+    must_deny:
+      - { budget: { used_actions: 4, max_actions: 5 } }
+    must_allow:
+      - { budget: { used_actions: 3, max_actions: 5 } }
+      # A zero budget must not divide by zero; the exhausted rule handles it.
+      - { budget: { used_actions: 0, max_actions: 0 } }

@@ -1,0 +1,242 @@
+{
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alertname": "KubePodCrashLooping",
+      "fingerprint": "1c893d850f62da72",
+      "id": 97,
+      "namespace": "chaos",
+      "node": "healops-worker",
+      "pod": "restart-on-resize-64b669d975-88r74",
+      "received_at": "2026-10-05T05:26:28.594449+00:00",
+      "role": "cause",
+      "severity": "critical",
+      "starts_at": "2026-10-05T05:24:58.996000+00:00",
+      "status": "firing"
+    }
+  ],
+  "approvals": [],
+  "cause_alertname": "KubePodCrashLooping",
+  "cause_scope": "workload",
+  "closed_at": null,
+  "correlation_reason": "new_incident",
+  "executions": [],
+  "format_version": 1,
+  "id": 21,
+  "ledger": [
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "25a852f25dc5aac3610996bd69affd398cc020a0fc8fef3ebb8c7790dc152306",
+      "incident_id": 21,
+      "occurred_at": "2026-10-05T05:26:28.594449+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "correlation_reason": "new_incident",
+        "created_incident": true,
+        "fingerprint": "1c893d850f62da72",
+        "role": "cause",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/restart-on-resize"
+      },
+      "prev_hash": "800091de2de837dd670f5f297db9f484e28e5f2db2df430cd96234b253fd2a77",
+      "seq": 76
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "5edc7e3f51ca0b7776be6901e7b99a8d5ad57e879b7565dfeeab9ab0aaa4ad94",
+      "incident_id": 21,
+      "occurred_at": "2026-10-05T05:26:28.691336+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "input": {
+          "cause_alert": {
+            "alertname": "KubePodCrashLooping",
+            "annotations": {
+              "description": "Container hungry in chaos/restart-on-resize-64b669d975-88r74 on node healops-worker has been in CrashLoopBackOff for 2m.",
+              "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+              "summary": "Pod chaos/restart-on-resize-64b669d975-88r74 is crash looping"
+            },
+            "container": "hungry",
+            "fingerprint": "1c893d850f62da72",
+            "labels": {
+              "alertname": "KubePodCrashLooping",
+              "container": "hungry",
+              "healops_runbook": "crashloop_rollback",
+              "namespace": "chaos",
+              "node": "healops-worker",
+              "pod": "restart-on-resize-64b669d975-88r74",
+              "prometheus": "monitoring/kps-prometheus",
+              "severity": "critical"
+            },
+            "namespace": "chaos",
+            "node": "healops-worker",
+            "pod": "restart-on-resize-64b669d975-88r74",
+            "severity": "critical",
+            "starts_at": "2026-10-05T05:24:58.996000+00:00",
+            "status": "firing"
+          },
+          "cause_scope": "workload",
+          "correlation_reason": "new_incident",
+          "expected_effect": null,
+          "expected_runbook": null,
+          "format_version": 1,
+          "incident_id": "21",
+          "label_note": null,
+          "opened_at": "2026-10-05T05:26:28.594449+00:00",
+          "symptom_alerts": [],
+          "target": {
+            "annotations": {
+              "deployment.kubernetes.io/revision": "1",
+              "meta.helm.sh/release-name": "chaos",
+              "meta.helm.sh/release-namespace": "chaos"
+            },
+            "autoscaler": null,
+            "containers": [
+              {
+                "cpu_limit_millis": 100,
+                "cpu_request_millis": 10,
+                "cpu_resize_policy": null,
+                "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+                "memory_limit_mib": 256,
+                "memory_peak_mib": null,
+                "memory_request_mib": 128,
+                "memory_resize_policy": "RestartContainer",
+                "name": "hungry",
+                "restart_count": 12
+              }
+            ],
+            "drained_workloads": [],
+            "gitops_manager": "unmanaged",
+            "kind": "Deployment",
+            "labels": {
+              "app": "restart-on-resize",
+              "app.kubernetes.io/managed-by": "Helm",
+              "app.kubernetes.io/name": "restart-on-resize",
+              "app.kubernetes.io/part-of": "chaos-app",
+              "healops.io/expected-decision": "refuse"
+            },
+            "name": "restart-on-resize",
+            "namespace": "chaos",
+            "node": null,
+            "node_state": null,
+            "peer_nodes": [],
+            "pods": [
+              "restart-on-resize-64b669d975-88r74"
+            ],
+            "previous_image": null,
+            "previous_revision": null,
+            "previous_template_digest": null,
+            "ready_replicas": 0,
+            "replicas": 1,
+            "revision": 1,
+            "server_supports_in_place_resize": true,
+            "template_digest": "b84f5c71d3917eda66c2bf17b421023836477edc3e39b9728c6884cee901570d"
+          }
+        },
+        "runbook": "crashloop_rollback",
+        "target": "chaos/Deployment/restart-on-resize"
+      },
+      "prev_hash": "25a852f25dc5aac3610996bd69affd398cc020a0fc8fef3ebb8c7790dc152306",
+      "seq": 77
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan",
+      "execution_id": null,
+      "hash": "875cf269b55e3c50705b570bd132c9c778f99eb017d4b4510b9a988a06c109b7",
+      "incident_id": 21,
+      "occurred_at": "2026-10-05T05:26:28.691336+00:00",
+      "payload": {
+        "actions": [],
+        "blast_radius": {
+          "namespaces": [],
+          "nodes": 0,
+          "pods": 0,
+          "user_facing": false
+        },
+        "blast_radius_score": 0,
+        "compensation": [],
+        "confidence": 1.0,
+        "cost_delta_inr_month": 0.0,
+        "durability": "ephemeral",
+        "expected_signal": null,
+        "gitops_managed": false,
+        "incident_id": "21",
+        "plan_id": "",
+        "planner_version": "0",
+        "refusal_reason": "no previous revision to roll back to -- this workload has only ever had one, so the crash is in its first deployment and needs a human",
+        "reversibility": "reversible",
+        "runbook": "crashloop_rollback",
+        "summary": "REFUSED: no previous revision to roll back to -- this workload has only ever had one, so the crash is in its first deployment and needs a human",
+        "target_kind": "Deployment",
+        "target_name": "restart-on-resize",
+        "target_namespace": "chaos",
+        "ttl_seconds": 0
+      },
+      "prev_hash": "5edc7e3f51ca0b7776be6901e7b99a8d5ad57e879b7565dfeeab9ab0aaa4ad94",
+      "seq": 78
+    }
+  ],
+  "mode": null,
+  "namespace": "chaos",
+  "opened_at": "2026-10-05T05:26:28.594449+00:00",
+  "outcome": "refused",
+  "outcome_detail": "refused",
+  "plans": [
+    {
+      "actions": [],
+      "blast_radius": {
+        "namespaces": [],
+        "nodes": 0,
+        "pods": 0,
+        "score": 0,
+        "user_facing": false
+      },
+      "compensation": [],
+      "confidence": 1.0,
+      "cost_delta_inr_month": 0.0,
+      "created_at": "2026-10-05T05:26:28.691336+00:00",
+      "durability": "ephemeral",
+      "expected_signal": {},
+      "id": "01a10a87-1a6c-79f5-9bbe-be24f9c39c7f",
+      "planner_version": "1.0.0",
+      "policy_decision": "deny",
+      "policy_reasons": [],
+      "refusal_reason": "no previous revision to roll back to -- this workload has only ever had one, so the crash is in its first deployment and needs a human",
+      "reversibility": "reversible",
+      "runbook": "crashloop_rollback",
+      "summary": "REFUSED: no previous revision to roll back to -- this workload has only ever had one, so the crash is in its first deployment and needs a human",
+      "target_key": "chaos/Deployment/restart-on-resize",
+      "ttl_seconds": 0
+    }
+  ],
+  "runbook": "crashloop_rollback",
+  "state": "escalated",
+  "summary": "REFUSED: no previous revision to roll back to -- this workload has only ever had one, so the crash is in its first deployment and needs a human",
+  "target_key": "chaos/Deployment/restart-on-resize",
+  "trail": [
+    {
+      "detail": "new_incident",
+      "label": "1 alert(s)",
+      "stage": "correlate",
+      "state": "passed"
+    },
+    {
+      "detail": "no previous revision to roll back to -- this workload has only ever had one, so the crash is in its first deployment and needs a human",
+      "label": "refused",
+      "stage": "plan",
+      "state": "stopped"
+    },
+    {
+      "detail": "",
+      "label": "refused",
+      "stage": "outcome",
+      "state": "stopped"
+    }
+  ],
+  "verifications": []
+}

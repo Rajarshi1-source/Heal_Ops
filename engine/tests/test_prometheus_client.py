@@ -189,8 +189,14 @@ async def test_oom_uses_the_counter_rule_not_the_flapping_gauge() -> None:
     route = respx.get(QUERY_URL).mock(return_value=httpx.Response(200, json=result("0")))
     await prom.golden_signals("shop", workload="api")
 
-    joined = " ".join(str(c.request.url) for c in route.calls)
-    assert "last_terminated_reason" not in joined
+    oom = next(
+        c.request.url.params["query"] for c in route.calls if "oom_events" in str(c.request.url)
+    )
+    # The gauge appears only as a multiplier on the restart COUNTER, never on its own.
+    assert "container_oom_events_total" in oom
+    assert "increase(kube_pod_container_status_restarts_total" in oom
+    assert oom.count("last_terminated_reason") == 1
+    assert "group_left" in oom
 
 
 @respx.mock
@@ -300,3 +306,45 @@ async def test_an_unobserved_peak_is_none_not_zero() -> None:
         return_value=httpx.Response(200, json={"status": "success", "data": {"result": []}})
     )
     assert await prom.memory_peak_mib("chaos", "hungry-worker", "worker") is None
+
+
+# --- pending alerts -------------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_pending_alerts_are_read_from_prometheus_scoped_to_the_workload() -> None:
+    route = respx.get(QUERY_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "success",
+                "data": {
+                    "result": [{"metric": {"alertname": "CPUThrottlingHigh"}, "value": [0, "1"]}]
+                },
+            },
+        )
+    )
+    names = await prom.pending_alerts("chaos", workload="cpu-burner")
+
+    assert names == ["CPUThrottlingHigh"]
+    query = route.calls.last.request.url.params["query"]
+    assert 'alertstate="pending"' in query and 'pod=~"cpu-burner-.*"' in query
+
+
+@respx.mock
+async def test_pending_alerts_unknown_when_prometheus_is_down() -> None:
+    respx.get(QUERY_URL).mock(side_effect=httpx.ConnectError("refused"))
+    assert await prom.pending_alerts("chaos", workload="cpu-burner") is None
+
+
+async def test_the_oom_signal_falls_back_to_a_counter_not_the_gauge() -> None:
+    """Regression, found on kind: cAdvisor's counter read 0 through real OOM kills (it parses the
+    kernel log, which a nested container cannot see), so "OOM counter flat" passed on no evidence.
+    The pod-level cgroup's always-zero series must not answer for the container either."""
+    query = prom.oom_query('{namespace="chaos",pod=~"hungry-worker-.*"}', "270s")
+
+    cadvisor, _, fallback = query.partition(" or label_replace(")
+    assert 'container!=""' in cadvisor
+    assert "increase(kube_pod_container_status_restarts_total" in fallback
+    assert 'reason="OOMKilled"' in fallback
+    assert "[270s]" in cadvisor and "[270s]" in fallback

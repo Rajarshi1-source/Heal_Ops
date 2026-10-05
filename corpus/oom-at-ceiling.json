@@ -1,0 +1,73 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodOOMKilled",
+    "annotations": {},
+    "container": "big-api",
+    "fingerprint": "scenario-oom-at-ceiling",
+    "labels": {
+      "alertname": "KubePodOOMKilled",
+      "container": "big-api",
+      "namespace": "chaos",
+      "node": "healops-worker3",
+      "pod": "big-api-6b456d7788-b2mp4",
+      "severity": "warning"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker3",
+    "pod": "big-api-6b456d7788-b2mp4",
+    "severity": "warning",
+    "starts_at": null,
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "captured_by_chaos_harness",
+  "expected_effect": "refuse",
+  "expected_runbook": "oom_memory_bump",
+  "format_version": 1,
+  "incident_id": "oom-at-ceiling",
+  "label_note": "Already at the 4Gi memory ceiling: more memory is not the fix, a code change is. [target captured live; alert synthesised]",
+  "opened_at": null,
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "1",
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"big-api\",\"namespace\":\"chaos\"},\"spec\":{\"replicas\":2,\"selector\":{\"matchLabels\":{\"app\":\"big-api\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"big-api\"}},\"spec\":{\"containers\":[{\"args\":[\"hungry-worker\"],\"env\":[{\"name\":\"TARGET_MIB\",\"value\":\"32\"}],\"image\":\"ghcr.io/rajarshi1-source/healops-chaos:0.1.0\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"big-api\",\"resizePolicy\":[{\"resourceName\":\"memory\",\"restartPolicy\":\"NotRequired\"}],\"resources\":{\"limits\":{\"memory\":\"4Gi\"},\"requests\":{\"cpu\":\"1\",\"memory\":\"1Gi\"}}}],\"nodeSelector\":{\"healops.io/pool\":\"general\"}}}}}\n"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": null,
+        "cpu_request_millis": 1000,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 4096,
+        "memory_peak_mib": null,
+        "memory_request_mib": 1024,
+        "memory_resize_policy": "NotRequired",
+        "name": "big-api",
+        "restart_count": 0
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {},
+    "name": "big-api",
+    "namespace": "chaos",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "big-api-6b456d7788-b2mp4",
+      "big-api-6b456d7788-dg6d4"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 2,
+    "replicas": 2,
+    "revision": 1,
+    "server_supports_in_place_resize": true,
+    "template_digest": "7121af70acbfc9280b3304c1209a614d3853ce8124b8c38ad4b80a238fd058af"
+  }
+}

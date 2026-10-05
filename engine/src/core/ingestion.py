@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import ledger
@@ -244,6 +244,15 @@ async def ingest_payload(
     raw = payload.model_dump(mode="json")
     ingested: list[IngestedAlert] = []
 
+    if any(alert.is_firing for alert in payload.alerts):
+        # Correlation is a read-then-write: look for an open incident, else open one. Two batches
+        # correlating at once both see nothing and both open one -- found on kind, where a
+        # Deployment's pods on two nodes arrive as two Alertmanager groups 0.3ms apart, and the
+        # engine opened two incidents and rolled the same Deployment back twice. Serialised, the
+        # second batch waits, then finds the first's incident and joins it. Held to commit; taken
+        # before the ledger's own lock, which is the order every other path also takes them in.
+        await session.execute(CORRELATION_LOCK)
+
     for alert in payload.alerts:
         if alert.is_firing:
             ingested.append(await ingest_alert(session, alert, raw))
@@ -251,6 +260,9 @@ async def ingest_payload(
             await resolve_alert(session, alert, raw)
 
     return ingested
+
+
+CORRELATION_LOCK = text("SELECT pg_advisory_xact_lock(hashtext('healops_correlation'))")
 
 
 def utcnow() -> datetime:

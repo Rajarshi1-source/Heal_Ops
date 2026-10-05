@@ -109,6 +109,21 @@ class Verdict:
         }
 
 
+def caused_alerts(
+    plan: RemediationPlan, before: SignalWindow, after: SignalWindow
+) -> tuple[str, ...]:
+    """Alerts now firing on the target that the ACTION could have caused.
+
+    Not the triggering alert, not one already firing before acting -- and not one already pending
+    then. A slow alert (`for: 15m`) whose condition the fault itself started fires minutes after
+    the fix; blaming the fix for it reverted a scale-out that had worked. Found on the kind
+    cluster: kube-prometheus-stack's CPUThrottlingHigh, started by the CPU fault, firing mid-window.
+    """
+    triggering = plan.expected_signal.alert_should_clear if plan.expected_signal else None
+    already = set(before.new_alerts) | set(before.pending_alerts)
+    return tuple(name for name in after.new_alerts if name != triggering and name not in already)
+
+
 def post_action_window(elapsed_seconds: float) -> str:
     """The PromQL range covering only time after the action, minus the settle period.
 
@@ -162,6 +177,9 @@ async def observe(plan: RemediationPlan, *, window: str = "5m") -> SignalWindow:
     on_target = await alertmanager_client.alerts_on_target(
         plan.target_namespace, pod=pod, node=node, workload=workload
     )
+    pending = await prometheus_client.pending_alerts(
+        plan.target_namespace, pod=pod, node=node, workload=workload
+    )
 
     return SignalWindow(
         alert_firing=firing,
@@ -171,6 +189,7 @@ async def observe(plan: RemediationPlan, *, window: str = "5m") -> SignalWindow:
         psi_full=signals.psi_full,
         memory_usage_ratio=signals.memory_usage_ratio,
         new_alerts=tuple(on_target or ()),
+        pending_alerts=tuple(pending or ()),
         custom=custom,
     )
 
@@ -251,10 +270,7 @@ def judge(
 
     # 5. Did the action cause something else? Scaling up fixes CPU and can start an OOM cascade, and
     #    only a whole-target check sees that.
-    triggering = plan.expected_signal.alert_should_clear if plan.expected_signal else None
-    caused = tuple(
-        name for name in after.new_alerts if name != triggering and name not in before.new_alerts
-    )
+    caused = caused_alerts(plan, before, after)
     if caused:
         reasons.append(
             f"new alert(s) appeared on this target that the action could have caused: "
@@ -348,10 +364,7 @@ def judge_early(
     if extra_failure:
         reasons.append(extra_failure)
 
-    triggering = plan.expected_signal.alert_should_clear if plan.expected_signal else None
-    caused = tuple(
-        name for name in after.new_alerts if name != triggering and name not in before.new_alerts
-    )
+    caused = caused_alerts(plan, before, after)
     if caused:
         reasons.append(
             f"new alert(s) appeared on this target that the action could have caused: "

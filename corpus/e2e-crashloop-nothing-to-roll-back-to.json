@@ -1,0 +1,85 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodCrashLooping",
+    "annotations": {
+      "description": "Container crashy in chaos/lonely-api-9d8dfd97b-4whgm on node healops-worker has been in CrashLoopBackOff for 2m.",
+      "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+      "summary": "Pod chaos/lonely-api-9d8dfd97b-4whgm is crash looping"
+    },
+    "container": "crashy",
+    "fingerprint": "68e3f9277c19222e",
+    "labels": {
+      "alertname": "KubePodCrashLooping",
+      "container": "crashy",
+      "healops_runbook": "crashloop_rollback",
+      "namespace": "chaos",
+      "node": "healops-worker",
+      "pod": "lonely-api-9d8dfd97b-4whgm",
+      "prometheus": "monitoring/kps-prometheus",
+      "severity": "critical"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker",
+    "pod": "lonely-api-9d8dfd97b-4whgm",
+    "severity": "critical",
+    "starts_at": "2026-10-05T05:08:58.996000+00:00",
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "new_incident",
+  "expected_effect": "refuse",
+  "expected_runbook": "crashloop_rollback",
+  "format_version": 1,
+  "incident_id": "e2e-crashloop-nothing-to-roll-back-to",
+  "label_note": "Crash-looping since its first revision (or since a restart that changed nothing): there is no different template to roll back to. [captured end to end: incident #9, evidence 92ab46463bf3]",
+  "opened_at": "2026-10-05T05:11:28.709561+00:00",
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "2",
+      "meta.helm.sh/release-name": "chaos",
+      "meta.helm.sh/release-namespace": "chaos"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": 50,
+        "cpu_request_millis": 10,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 64,
+        "memory_peak_mib": null,
+        "memory_request_mib": 32,
+        "memory_resize_policy": null,
+        "name": "crashy",
+        "restart_count": 7
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {
+      "app": "lonely-api",
+      "app.kubernetes.io/managed-by": "Helm",
+      "app.kubernetes.io/name": "lonely-api",
+      "app.kubernetes.io/part-of": "chaos-app",
+      "healops.io/expected-decision": "deny"
+    },
+    "name": "lonely-api",
+    "namespace": "chaos",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "lonely-api-9d8dfd97b-4whgm"
+    ],
+    "previous_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+    "previous_revision": 1,
+    "previous_template_digest": "e8fdcfb88df1b8df652c0a07be363ab9d2ef207f6c1293545e2f522ddf151477",
+    "ready_replicas": 1,
+    "replicas": 1,
+    "revision": 2,
+    "server_supports_in_place_resize": true,
+    "template_digest": "e8fdcfb88df1b8df652c0a07be363ab9d2ef207f6c1293545e2f522ddf151477"
+  }
+}

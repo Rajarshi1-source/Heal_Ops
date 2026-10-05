@@ -2,7 +2,8 @@
 
 `SERVICE` (or the first argument) names the chaos fixture. The names here are a **contract**: each
 one is the `chaos_fixture` value on the runbook that answers it, and CI asserts that every
-registered runbook names a fixture that exists in this table.
+registered runbook names a fixture that exists in this table. `cpu-load` is the one exception: it
+is not a fixture but the load that makes cpu-burner's fault real.
 """
 
 from __future__ import annotations
@@ -11,12 +12,13 @@ import os
 import sys
 from collections.abc import Callable
 
-from services import cpu_burner, crashy_api, hungry_worker, log_spammer
+from services import cpu_burner, cpu_load, crashy_api, hungry_worker, log_spammer
 
 SERVICES: dict[str, Callable[[], None]] = {
     "crashy-api": crashy_api.main,
     "hungry-worker": hungry_worker.main,
     "cpu-burner": cpu_burner.main,
+    "cpu-load": cpu_load.main,
     "log-spammer": log_spammer.main,
 }
 

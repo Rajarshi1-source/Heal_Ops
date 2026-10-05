@@ -3,6 +3,14 @@
 
 fullnameOverride: kps
 
+# The stack ships alerts that share names with the five HealOps owns (`for: 15m`, different
+# labels). The engine routes by alertname, so a duplicate would arrive as a second, late cause for
+# the same incident. HealOps' rules in charts/alerting-rules are the ones that select a runbook.
+defaultRules:
+  disabled:
+    KubePodCrashLooping: true
+    KubeNodeNotReady: true
+
 # --- Alertmanager -------------------------------------------------------------------------------
 alertmanager:
   enabled: true
@@ -16,6 +24,7 @@ alertmanager:
     # this enables is exactly why the HealOps webhook must be idempotent -- it is, via
     # (fingerprint, runbook, incident_id).
     replicas: 3
+    nodeSelector: { healops.io/pool: platform }
     additionalArgs:
       # The UTF-8 matcher parser is the default path now; strict mode makes a config that would
       # silently fall back to the classic parser fail loudly instead.
@@ -23,6 +32,12 @@ alertmanager:
         value: utf8-strict-mode
     retention: 120h
     logLevel: info
+    # The shared secret the webhook receiver presents to HealOps, mounted at
+    # /etc/alertmanager/secrets/healops-webhook/. It must exist BEFORE this chart installs -- an
+    # Alertmanager pod cannot start without its secret volume -- so `make observability` creates
+    # it first, and CI does the same.
+    secrets:
+      - healops-webhook
 
   service:
     type: NodePort
@@ -39,7 +54,9 @@ alertmanager:
       group_wait: 30s
       group_interval: 5m
       repeat_interval: 4h
-      receiver: healops
+      # Only the five alerts a runbook answers reach HealOps. Everything else -- kind's TargetDown
+      # noise, the stack's own alerts -- has no runbook, and would only become an escalation.
+      receiver: "null"
 
       routes:
         # Watchdog is the stack's own liveness alert; it must never reach a runbook.
@@ -56,6 +73,7 @@ alertmanager:
           continue: false
 
         - matchers:
+            - alertname =~ "KubePodCrashLooping|KubePodOOMKilled|HighPodCPU|NodeDiskPressure|KubeNodeNotReady"
             - severity =~ "critical|warning"
           receiver: healops
 
@@ -100,9 +118,6 @@ alertmanager:
           - severity = "warning"
         equal: ["namespace", "alertname"]
 
-  # Mount the shared secret the webhook receiver presents to HealOps.
-  alertmanagerSpec_secrets: []
-
 # --- Prometheus ---------------------------------------------------------------------------------
 prometheus:
   service:
@@ -115,6 +130,10 @@ prometheus:
       repository: prometheus/prometheus
       tag: v3.11.2
     retention: 24h
+    # Every observability component sits on the platform pool (k8s/kind/cluster.yaml): the chaos
+    # suite kills nodes in the general pool, and a verifier whose Prometheus died with the node it
+    # was judging would report "inconclusive" for the wrong reason.
+    nodeSelector: { healops.io/pool: platform }
     scrapeInterval: 15s
     evaluationInterval: 15s
 
@@ -134,6 +153,7 @@ prometheus:
 # --- Grafana ------------------------------------------------------------------------------------
 grafana:
   enabled: true
+  nodeSelector: { healops.io/pool: platform }
   image:
     tag: 13.0.3
   adminPassword: admin
@@ -163,6 +183,15 @@ prometheus-node-exporter:
   extraArgs:
     - --collector.pressure
     - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+  prometheus:
+    monitor:
+      # Every node-exporter series names its node. Out of the box it carries only `instance` (an
+      # IP:port), so the disk alert and the disk runbook's recovery check -- both scoped by `node` --
+      # matched nothing at all. Found on kind: a disk cleanup that freed 60 MiB judged inconclusive.
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+          action: replace
 
 kubelet:
   enabled: true
@@ -181,3 +210,15 @@ kubeProxy:
   enabled: false
 kubeEtcd:
   enabled: false
+
+# --- the rest of the stack on the platform pool, too --------------------------------------------
+prometheusOperator:
+  nodeSelector: { healops.io/pool: platform }
+  admissionWebhooks:
+    patch:
+      nodeSelector: { healops.io/pool: platform }
+
+kube-state-metrics:
+  # The drain verdict reads this exporter; it must not be on a node the drain is judging.
+  nodeSelector: { healops.io/pool: platform }
+

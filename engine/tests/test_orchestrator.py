@@ -513,6 +513,27 @@ async def test_failed_application_escalates_rather_than_verifying(
     assert incident.outcome == "escalated"
 
 
+async def test_a_second_plan_for_a_target_mid_verification_is_blocked(
+    db_session: AsyncSession,
+) -> None:
+    """Regression, found on the kind cluster: two incidents for one Deployment, and the second
+    rolled it back onto the broken revision the first had just fixed. The lock covers the API
+    calls; the change is still being judged for minutes after. One remediation per target."""
+    from tests.factories import make_execution
+
+    _, first, _ = await make_execution(db_session, plan=good_plan())
+    incident = await make_incident(db_session)
+    runbook = StubRunbook(good_plan())
+
+    result = await orchestrator.handle(
+        db_session, incident, bundle(target()), runbook, target(), promotion=AUTO
+    )
+
+    assert result.outcome == "blocked"
+    assert runbook.execute_calls == 0
+    assert f"execution {first.id}" in (result.detail or "")
+
+
 async def test_lock_contention_blocks_rather_than_forcing(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

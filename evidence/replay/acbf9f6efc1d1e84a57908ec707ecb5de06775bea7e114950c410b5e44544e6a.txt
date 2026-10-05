@@ -1,0 +1,12 @@
+incident   : node/healops-worker3  NodeDiskPressure  2026-10-05T05:32:01.541475+00:00
+correlation: cause=NodeDiskPressure (new_incident); 1 alert(s), 0 symptom(s) attached as evidence
+plan       : archive 9 log files (60.8 MiB) older than 7d from healops-worker3 to s3://healops-archives, then delete the originals
+             (partially_reversible, ephemeral ttl=2h, blast radius: 0 pods / 1 nodes / internal, confidence 0.73)
+replanned  : MATCH  recorded input reproduces the plan, digest 453796a0bd93
+policy     : require_approval  [approve-not-promoted, approve-node-scoped, approve-low-confidence, approve-partially-reversible]
+approval   : approved by chaos-suite; deadline 2026-10-05T05:42:07.967756+00:00
+execute    : ok  archived and removed 9 files, freeing 60.8 MiB  in 10.1s
+verify     : REMEDIATED  alert cleared, signals within thresholds, no new alerts on the target
+outcome    : remediated
+ledger     : 8 entries, chain VALID, root 5ff5ef7dca52
+bundle     : sha256 acbf9f6efc1d1e84a57908ec707ecb5de06775bea7e114950c410b5e44544e6a

@@ -10,6 +10,7 @@ asserting on raw Go-template text.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -113,11 +114,22 @@ def test_node_join_is_not_defeated_by_operator_precedence(
 def test_oom_uses_the_counter_not_the_flapping_gauge(
     groups: dict[str, list[dict[str, Any]]],
 ) -> None:
-    all_expr = "\n".join(r["expr"] for rules in groups.values() for r in rules)
-    assert "container_oom_events_total" in all_expr
-    assert "last_terminated_reason" not in all_expr, (
-        "the OOM signal must be a counter; last_terminated_reason flaps"
+    """The counter is primary; the fallback is a counter too, the gauge only ever a qualifier.
+
+    cAdvisor learns of OOM kills from the kernel log, which a kind node cannot read, so its counter
+    sits at zero there and the alert never fired. The fallback multiplies the restart COUNTER by
+    "last termination was an OOM kill" -- so the gauge alone, which flaps, can never decide.
+    """
+    recording = {r["record"]: r["expr"] for r in groups["healops.recording"] if "record" in r}
+    primary, fallback = re.split(
+        r"\n\s*or\n", recording["healops:container_oom_events:increase10m"], maxsplit=1
     )
+    assert "container_oom_events_total" in primary
+    assert "last_terminated_reason" not in primary
+    assert "increase(kube_pod_container_status_restarts_total" in fallback
+    assert "* on (namespace, pod, container) group_left" in fallback
+    alerts = "\n".join(r["expr"] for rules in groups.values() for r in rules if "alert" in r)
+    assert "last_terminated_reason" not in alerts, "no alert reads the flapping gauge directly"
 
 
 def test_throttle_is_expressed_as_a_ratio(
@@ -130,6 +142,12 @@ def test_throttle_is_expressed_as_a_ratio(
     assert "container_cpu_cfs_throttled_periods_total" in ratio
     assert "container_cpu_cfs_periods_total" in ratio
     assert "/" in ratio
+    # Regression, found on kind: an idle container's few startup periods read as 22% throttled.
+    # The ratio is gated on activity, and an observed idle container reads 0 -- never `vector(0)`,
+    # which would also paper over a container nobody is scraping.
+    assert "and on (namespace, pod, container)" in ratio
+    assert "> 2" in ratio
+    assert "vector(0)" not in ratio
 
 
 def test_recording_rules_cover_every_verifier_signal(
@@ -158,6 +176,7 @@ def test_self_monitoring_alerts_exist(groups: dict[str, list[dict[str, Any]]]) -
     self_alerts = {r["alert"] for r in groups["healops.self"] if "alert" in r}
     assert {
         "HealOpsLedgerChainInvalid",
+        "HealOpsLedgerUnverified",
         "HealOpsWatchdogActing",
         "HealOpsBreakerOpen",
         "HealOpsBudgetExhausted",

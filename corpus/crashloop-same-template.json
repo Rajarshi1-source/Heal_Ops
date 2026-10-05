@@ -1,0 +1,84 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodCrashLooping",
+    "annotations": {},
+    "container": "crashy-api",
+    "fingerprint": "scenario-crashloop-same-template",
+    "labels": {
+      "alertname": "KubePodCrashLooping",
+      "container": "crashy-api",
+      "namespace": "chaos",
+      "node": "healops-worker2",
+      "pod": "crashy-api-86f4596cc4-7rw2c",
+      "severity": "warning"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker2",
+    "pod": "crashy-api-86f4596cc4-7rw2c",
+    "severity": "warning",
+    "starts_at": null,
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "captured_by_chaos_harness",
+  "expected_effect": "refuse",
+  "expected_runbook": "crashloop_rollback",
+  "format_version": 1,
+  "incident_id": "crashloop-same-template",
+  "label_note": "The previous revision differs only by kubectl's restartedAt stamp: rolling back a restart restores nothing, so the cause is outside the spec. [target captured live; alert synthesised]",
+  "opened_at": null,
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "8",
+      "healops.io/chaos-fixture": "crashy-api",
+      "meta.helm.sh/release-name": "chaos",
+      "meta.helm.sh/release-namespace": "chaos"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": 100,
+        "cpu_request_millis": 20,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 64,
+        "memory_peak_mib": null,
+        "memory_request_mib": 32,
+        "memory_resize_policy": null,
+        "name": "crashy-api",
+        "restart_count": 0
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {
+      "app": "crashy-api",
+      "app.kubernetes.io/managed-by": "Helm",
+      "app.kubernetes.io/name": "crashy-api",
+      "app.kubernetes.io/part-of": "chaos-app"
+    },
+    "name": "crashy-api",
+    "namespace": "chaos",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "crashy-api-6775f995fc-dftvn",
+      "crashy-api-6775f995fc-r8lts",
+      "crashy-api-6775f995fc-r9tsc",
+      "crashy-api-86f4596cc4-7rw2c",
+      "crashy-api-86f4596cc4-lt22d",
+      "crashy-api-86f4596cc4-rmkfl"
+    ],
+    "previous_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+    "previous_revision": 7,
+    "previous_template_digest": "273fb8658610479b464e95d399ce5febc665c0845ba42a8e40ea90ca81832b98",
+    "ready_replicas": 3,
+    "replicas": 3,
+    "revision": 8,
+    "server_supports_in_place_resize": true,
+    "template_digest": "273fb8658610479b464e95d399ce5febc665c0845ba42a8e40ea90ca81832b98"
+  }
+}

@@ -270,6 +270,36 @@ def evaluate(
 ) -> PolicyDecision:
     """Run the gate. `first DENY wins, then any REQUIRE_APPROVAL, else ALLOW`."""
     active = policy or get_policy()
+    fired = set(matching_rules(plan, target, budget, promotion, active))
+
+    for rule in active.deny_rules:
+        if rule.id in fired:
+            return PolicyDecision(effect="deny", reasons=(rule.id,), messages=(rule.message,))
+
+    approvals = [r for r in active.approval_rules if r.id in fired]
+    if approvals:
+        return PolicyDecision(
+            effect="require_approval",
+            reasons=tuple(r.id for r in approvals),
+            messages=tuple(r.message for r in approvals),
+        )
+
+    return PolicyDecision(effect="allow")
+
+
+def matching_rules(
+    plan: RemediationPlan,
+    target: TargetView,
+    budget: BudgetSnapshot | None = None,
+    promotion: PromotionSnapshot | None = None,
+    policy: Policy | None = None,
+) -> list[str]:
+    """Every rule whose expression matches, in file order.
+
+    Separate from `evaluate` so the policy gate in CI can test each rule on its own: a rule that
+    never fires, or always fires, is invisible behind first-deny-wins otherwise.
+    """
+    active = policy or get_policy()
     budget = budget or BudgetSnapshot()
     promotion = promotion or PromotionSnapshot()
 
@@ -302,19 +332,7 @@ def evaluate(
             )
             return True
 
-    for rule in active.deny_rules:
-        if matches(rule):
-            return PolicyDecision(effect="deny", reasons=(rule.id,), messages=(rule.message,))
-
-    fired = [r for r in active.approval_rules if matches(r)]
-    if fired:
-        return PolicyDecision(
-            effect="require_approval",
-            reasons=tuple(r.id for r in fired),
-            messages=tuple(r.message for r in fired),
-        )
-
-    return PolicyDecision(effect="allow")
+    return [rule.id for rule in active.rules if matches(rule)]
 
 
 _policy: Policy | None = None

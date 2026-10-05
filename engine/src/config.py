@@ -110,6 +110,16 @@ class Settings(BaseSettings):
     memory_bump_factor: float = 1.5
     memory_ceiling_mib: int = 4096
     disk_archive_floor_days: int = 7
+    disk_archive_roots: list[str] = Field(default_factory=lambda: ["/var/log"])
+    """The only host directories disk cleanup may read or delete under. Anything else is refused."""
+    node_agent_mode: Literal["local", "job"] = "local"
+    """`job` in a cluster: disk work runs in a Job on the target node. `local` runs it in-process,
+    for development and the unit suite."""
+    node_agent_image: str = "healops-engine:0.1.0"
+    node_agent_secret: str = "healops-engine"  # noqa: S105 - a Secret's name, not its value
+    node_agent_config_map: str = "healops-engine"
+    node_agent_service_account: str = "healops-node-agent"
+    node_agent_timeout_seconds: int = 120
     drain_capacity_headroom: float = 1.2
     recurrence_threshold: int = 4
     recurrence_window_days: int = 7

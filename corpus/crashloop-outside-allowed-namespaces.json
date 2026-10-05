@@ -1,0 +1,75 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodCrashLooping",
+    "annotations": {},
+    "container": "scratch-api",
+    "fingerprint": "scenario-crashloop-outside-allowed-namespaces",
+    "labels": {
+      "alertname": "KubePodCrashLooping",
+      "container": "scratch-api",
+      "namespace": "scratch",
+      "node": "healops-worker2",
+      "pod": "scratch-api-74cb948877-pqjgz",
+      "severity": "warning"
+    },
+    "namespace": "scratch",
+    "node": "healops-worker2",
+    "pod": "scratch-api-74cb948877-pqjgz",
+    "severity": "warning",
+    "starts_at": null,
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "captured_by_chaos_harness",
+  "expected_effect": "deny",
+  "expected_runbook": "crashloop_rollback",
+  "format_version": 1,
+  "incident_id": "crashloop-outside-allowed-namespaces",
+  "label_note": "A rollable bad revision in a namespace automation was never granted (deny-outside-allowed-namespaces). [target captured live; alert synthesised]",
+  "opened_at": null,
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "2",
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"scratch-api\",\"namespace\":\"scratch\"},\"spec\":{\"replicas\":2,\"selector\":{\"matchLabels\":{\"app\":\"scratch-api\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"scratch-api\"}},\"spec\":{\"containers\":[{\"args\":[\"crashy-api\"],\"env\":[{\"name\":\"REVISION\",\"value\":\"2\"}],\"image\":\"ghcr.io/rajarshi1-source/healops-chaos:0.1.0\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"scratch-api\",\"resources\":{\"limits\":{\"memory\":\"64Mi\"},\"requests\":{\"cpu\":\"20m\",\"memory\":\"32Mi\"}}}],\"nodeSelector\":{\"healops.io/pool\":\"general\"}}}}}\n"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": null,
+        "cpu_request_millis": 20,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 64,
+        "memory_peak_mib": null,
+        "memory_request_mib": 32,
+        "memory_resize_policy": null,
+        "name": "scratch-api",
+        "restart_count": 0
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {},
+    "name": "scratch-api",
+    "namespace": "scratch",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "scratch-api-66bc77dc64-cjkzz",
+      "scratch-api-66bc77dc64-k6t9v",
+      "scratch-api-74cb948877-pqjgz",
+      "scratch-api-74cb948877-vxsbk"
+    ],
+    "previous_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+    "previous_revision": 1,
+    "previous_template_digest": "79d43a6a74f73bad681932b4d4f8c03dcffee9641a56821ec12c3e511da13321",
+    "ready_replicas": 2,
+    "replicas": 2,
+    "revision": 2,
+    "server_supports_in_place_resize": true,
+    "template_digest": "293e3db60289e7dd475acdaa100e49a86b165f421b6812648e1bb49346d9e737"
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "cause_alert": {
+    "alertname": "HighPodCPU",
+    "annotations": {
+      "description": "Container cpu-burner in chaos/cpu-burner-5879f48bb8-52tq4 has used more than 0.8 of its CPU limit for 5m (currently 99.99%). The runbook checks whether an HPA owns this workload before touching replicas.",
+      "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#cpu_scale_up",
+      "summary": "High CPU on chaos/cpu-burner-5879f48bb8-52tq4"
+    },
+    "container": "cpu-burner",
+    "fingerprint": "5e1227c0d83bd651",
+    "labels": {
+      "alertname": "HighPodCPU",
+      "container": "cpu-burner",
+      "healops_runbook": "cpu_scale_up",
+      "namespace": "chaos",
+      "node": "healops-worker2",
+      "pod": "cpu-burner-5879f48bb8-52tq4",
+      "prometheus": "monitoring/kps-prometheus",
+      "severity": "warning"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker2",
+    "pod": "cpu-burner-5879f48bb8-52tq4",
+    "severity": "warning",
+    "starts_at": "2026-10-05T04:46:43.996000+00:00",
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "new_incident",
+  "expected_effect": "allow",
+  "expected_runbook": "cpu_scale_up",
+  "format_version": 1,
+  "incident_id": "e2e-cpu-load",
+  "label_note": "CPU from load through the Service, no HPA: two more small replicas, under the cost line. [captured end to end: incident #2, evidence 9c268ad7c325]",
+  "opened_at": "2026-10-05T04:47:28.870234+00:00",
+  "symptom_alerts": [
+    {
+      "alertname": "HighPodCPU",
+      "annotations": {
+        "description": "Container cpu-burner in chaos/cpu-burner-5879f48bb8-fmlmf has used more than 0.8 of its CPU limit for 5m (currently 99.98%). The runbook checks whether an HPA owns this workload before touching replicas.",
+        "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#cpu_scale_up",
+        "summary": "High CPU on chaos/cpu-burner-5879f48bb8-fmlmf"
+      },
+      "container": "cpu-burner",
+      "fingerprint": "19eec4e2bcd2a648",
+      "labels": {
+        "alertname": "HighPodCPU",
+        "container": "cpu-burner",
+        "healops_runbook": "cpu_scale_up",
+        "namespace": "chaos",
+        "node": "healops-worker3",
+        "pod": "cpu-burner-5879f48bb8-fmlmf",
+        "prometheus": "monitoring/kps-prometheus",
+        "severity": "warning"
+      },
+      "namespace": "chaos",
+      "node": "healops-worker3",
+      "pod": "cpu-burner-5879f48bb8-fmlmf",
+      "severity": "warning",
+      "starts_at": "2026-10-05T04:46:43.996000+00:00",
+      "status": "firing"
+    }
+  ],
+  "target": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "1",
+      "healops.io/chaos-fixture": "cpu-burner",
+      "meta.helm.sh/release-name": "chaos",
+      "meta.helm.sh/release-namespace": "chaos"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": 400,
+        "cpu_request_millis": 50,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 64,
+        "memory_peak_mib": null,
+        "memory_request_mib": 32,
+        "memory_resize_policy": null,
+        "name": "cpu-burner",
+        "restart_count": 0
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {
+      "app": "cpu-burner",
+      "app.kubernetes.io/managed-by": "Helm",
+      "app.kubernetes.io/name": "cpu-burner",
+      "app.kubernetes.io/part-of": "chaos-app"
+    },
+    "name": "cpu-burner",
+    "namespace": "chaos",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "cpu-burner-5879f48bb8-52tq4",
+      "cpu-burner-5879f48bb8-fmlmf"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 2,
+    "replicas": 2,
+    "revision": 1,
+    "server_supports_in_place_resize": true,
+    "template_digest": "313d7e4abb64ea903e83cf26898231a26183ba11cb69a1426d6715b956b84989"
+  }
+}

@@ -1,0 +1,7 @@
+incident   : chaos/Deployment/lonely-api  KubePodCrashLooping  2026-10-05T06:06:28.313933+00:00
+correlation: cause=KubePodCrashLooping (new_incident); 1 alert(s), 0 symptom(s) attached as evidence
+plan       : REFUSED by crashloop_rollback: the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human
+replanned  : MATCH  recorded input reproduces the plan, digest 58fd5149f51a
+outcome    : refused
+ledger     : 3 entries, chain VALID, root 311b03e66caa
+bundle     : sha256 134b7f1400a343af9839c0a41050b4a60de84e9518312ec6f4672b95bfd34e20

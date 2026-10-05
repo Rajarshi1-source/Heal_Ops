@@ -62,6 +62,14 @@ def api_client() -> k8s_client.ApiClient:
     return k8s_client.ApiClient(configuration)
 
 
+def serialise(obj: Any) -> Any:
+    """A typed client model as the plain camelCase JSON the API server speaks.
+
+    No configuration is loaded: serialisation is local, so a pure caller stays pure.
+    """
+    return k8s_client.ApiClient().sanitize_for_serialization(obj)
+
+
 def apps_v1() -> k8s_client.AppsV1Api:
     return k8s_client.AppsV1Api(api_client())
 
@@ -143,7 +151,10 @@ async def call_api(
             method,
             body=body,
             header_params={"Content-Type": content_type, "Accept": "application/json"},
-            response_type="object",
+            # Client 36 takes a status -> type map; the old `response_type` keyword is a TypeError
+            # there, which mocked unit tests never noticed and a real resize hit at once.
+            response_types_map={200: "object", 201: "object"},
+            _return_http_data_only=True,
             auth_settings=["BearerToken"],
             _request_timeout=settings.k8s_timeout_seconds,
             _preload_content=True,

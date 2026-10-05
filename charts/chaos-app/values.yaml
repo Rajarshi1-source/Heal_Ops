@@ -1,5 +1,6 @@
 image:
-  repository: ghcr.io/OWNER/healops-chaos
+  # Lowercase: an OCI reference with uppercase characters is invalid and never pulls.
+  repository: ghcr.io/rajarshi1-source/healops-chaos
   # Pinned by CI to the git SHA. Never `latest`.
   tag: "0.1.0"
   pullPolicy: IfNotPresent
@@ -23,13 +24,17 @@ services:
     name: hungry-worker
     replicas: 1
     env:
-      TARGET_MIB: "384"
+      # Healthy until the fault is injected (`kubectl set env deployment/hungry-worker
+      # TARGET_MIB=320`), like crashy-api: a fixture that OOMs from install fires its alert once and
+      # never again on cue, because Alertmanager does not re-notify an unchanged group for hours.
+      # 320 is above the 256Mi limit, so it is OOM-killed -- and below the 384Mi the runbook's 1.5x
+      # bump produces, with room for the interpreter, so the in-place resize genuinely fixes it.
+      TARGET_MIB: "128"
       GROWTH_MIB_PER_SEC: "16"
       START_DELAY_S: "15"
     resources:
       requests: { cpu: 20m, memory: 128Mi }
-      # Below TARGET_MIB, so it is OOM-killed. Raising this limit to ~512Mi genuinely fixes it,
-      # which is what makes the in-place resize verifiable rather than cosmetic.
+      # Below the injected TARGET_MIB, so it is OOM-killed; see TARGET_MIB for why 1.5x is enough.
       limits: { cpu: 100m, memory: 256Mi }
     # In-place resize needs the memory resizePolicy to allow it. RestartContainer here would make
     # the runbook refuse -- which is itself a fixture, see refusalFixtures.oomRestartPolicy.
@@ -49,7 +54,33 @@ services:
       BURN_SECONDS: "900"
     resources:
       requests: { cpu: 50m, memory: 32Mi }
-      limits: { cpu: 200m, memory: 64Mi }
+      # 400m, not 200m: a 40ms CFS quota per 100ms period absorbs request bursts that a 20ms one
+      # turns into throttling. See cpuLoad below for the measurements.
+      limits: { cpu: 400m, memory: 64Mi }
+
+  # Not a fixture: the load that makes cpu-burner's fault real. Off until a test or the demo scales
+  # it to 1. Calibrated on kind, measured rather than estimated, at 260 req/s balanced round-robin
+  # across the burner pods (via cpu-burner-headless):
+  #   2 burners: 99-100% of their 400m limit -- HighPodCPU fires with room to spare;
+  #   4 burners (the runbook's fix): 38-43% of the limit, at most 0.2% of CFS periods throttled.
+  # Three lessons are in those numbers. Throttling is about bursts against the CFS quota, so a
+  # 40ms quota (400m) absorbs what a 20ms one did not; kube-proxy's random choice per connection
+  # bunched requests into bursts, so the driver balances itself; and it must stay open-loop -- at a
+  # 48-request in-flight cap it dropped requests as latency rose and quietly stopped being a fault.
+  # Retune RATE_PER_SEC, never the verifier's thresholds.
+  cpuLoad:
+    enabled: true
+    name: cpu-load
+    replicas: 0
+    env:
+      TARGET_URL: http://cpu-burner-headless:8080/work?ms=2
+      RATE_PER_SEC: "260"
+      MAX_IN_FLIGHT: "256"
+    resources:
+      # No CPU limit: the driver must never be the thing that throttles, and with no limit series
+      # it cannot raise a HighPodCPU of its own.
+      requests: { cpu: 100m, memory: 32Mi }
+      limits: { memory: 128Mi }
 
   logSpammer:
     enabled: true
@@ -59,18 +90,25 @@ services:
       RATE_MIB_PER_MIN: "64"
       MAX_TOTAL_MIB: "2048"
       SEED_OLD_FILES: "12"
+      # 12 x 8 MiB clears the runbook's 32 MiB minimum; 1 MiB files would make it always refuse.
+      SEED_FILE_MIB: "8"
       LOG_DIR: /var/log/chaos
     resources:
       requests: { cpu: 20m, memory: 32Mi }
       limits: { cpu: 200m, memory: 64Mi }
     volume:
-      # emptyDir lands on the node filesystem, so filling it moves the same signal the
-      # NodeDiskPressure rule reads.
+      # A hostPath under /var/log: the files are on the NODE, where the NodeDiskPressure rule
+      # measures and where the node agent is allowed to clean (`disk_archive_roots`). An emptyDir
+      # would bury them under the kubelet's pod directory, outside any archive root.
+      hostPath: /var/log/chaos
       sizeLimit: 3Gi
 
 # Workloads that exist so HealOps can be proven to REFUSE them. A remediation engine that never
 # refuses is a liability, and refusal recall is graded at 100% in the decision eval.
 refusalFixtures:
+  # On the platform pool, which node faults never touch. They are broken on purpose, and a drain
+  # that moved one would be judged on a workload that was never healthy to begin with.
+  nodeSelector: { healops.io/pool: platform }
   # 1. StatefulSet -- policy denies stateful workloads outright.
   statefulSet:
     enabled: true
@@ -96,5 +134,6 @@ refusalFixtures:
     name: restart-on-resize
     replicas: 1
 
-nodeSelector: {}
+# The general pool: node faults land here and nowhere else (k8s/kind/cluster.yaml).
+nodeSelector: { healops.io/pool: general }
 tolerations: []

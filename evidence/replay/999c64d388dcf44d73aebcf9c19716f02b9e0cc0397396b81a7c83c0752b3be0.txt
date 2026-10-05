@@ -1,0 +1,7 @@
+incident   : chaos/Deployment/chaos-state  KubePodCrashLooping  2026-10-05T05:22:58.613878+00:00
+correlation: cause=KubePodCrashLooping (new_incident); 1 alert(s), 0 symptom(s) attached as evidence
+plan       : REFUSED by crashloop_rollback: StatefulSet is not rollable by this runbook; only Deployments carry the ReplicaSet revision history a rollback needs
+replanned  : MATCH  recorded input reproduces the plan, digest f81317012190
+outcome    : refused
+ledger     : 3 entries, chain VALID, root 87330d75905a
+bundle     : sha256 999c64d388dcf44d73aebcf9c19716f02b9e0cc0397396b81a7c83c0752b3be0

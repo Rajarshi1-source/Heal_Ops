@@ -17,17 +17,38 @@ spec:
       rules:
         # Throttle RATIO -- dimensionless. Raw throttled-period counters move with replica count
         # and window length, which makes a raw comparison meaningless.
+        #
+        # Only for a container that is actually busy: CFS counts a period only while the container
+        # is runnable, so for a near-idle one the ratio is "throttled in a few startup periods" --
+        # found on kind, where a rollback that fixed an idle HTTP server read as 22% throttled from
+        # Python starting up. Below 2 active periods a second (20% of wall time), an observed
+        # container reports 0: an idle container cannot be CPU-starved. A missing series stays
+        # missing, so an unobserved one is still `inconclusive`, never healthy.
         - record: healops:container_cpu_throttle_ratio:rate5m
           expr: |
-            sum by (namespace, pod, container) (
-              rate(container_cpu_cfs_throttled_periods_total{container!="", container!="POD"}[5m])
+            (
+              sum by (namespace, pod, container) (
+                rate(container_cpu_cfs_throttled_periods_total{container!="", container!="POD"}[5m])
+              )
+              /
+              clamp_min(
+                sum by (namespace, pod, container) (
+                  rate(container_cpu_cfs_periods_total{container!="", container!="POD"}[5m])
+                ),
+                1e-9
+              )
             )
-            /
-            clamp_min(
+            and on (namespace, pod, container)
+            (
               sum by (namespace, pod, container) (
                 rate(container_cpu_cfs_periods_total{container!="", container!="POD"}[5m])
-              ),
-              1e-9
+              ) > 2
+            )
+            or
+            (
+              sum by (namespace, pod, container) (
+                rate(container_cpu_cfs_periods_total{container!="", container!="POD"}[5m])
+              ) * 0
             )
 
         # CPU usage as a fraction of the configured limit.
@@ -57,11 +78,33 @@ spec:
               1e-9
             )
 
-        # OOM by COUNTER, not the flapping last_terminated_reason gauge.
+        # OOM by COUNTER, not the flapping last_terminated_reason gauge. cAdvisor's counter first;
+        # where cAdvisor cannot count -- it learns of OOM kills from the kernel log, which a nested
+        # container (a kind node) cannot read, so the counter sits at zero forever -- the fallback
+        # is still a counter: restarts, qualified by the last termination having been an OOM kill.
+        # The gauge never decides on its own, so its flapping cannot raise or clear the alert.
+        # The larger of the two counts, not the first present: on kind cAdvisor's series exists and
+        # reads 0 through real OOM kills. Labelled apart by `source` so `or` keeps both.
         - record: healops:container_oom_events:increase10m
           expr: |
-            sum by (namespace, pod, container) (
-              increase(container_oom_events_total{container!=""}[10m])
+            max by (namespace, pod, container) (
+              label_replace(
+                sum by (namespace, pod, container) (
+                  increase(container_oom_events_total{container!=""}[10m])
+                ),
+                "source", "cadvisor", "", ""
+              )
+              or
+              label_replace(
+                sum by (namespace, pod, container) (
+                  increase(kube_pod_container_status_restarts_total[10m])
+                  * on (namespace, pod, container) group_left
+                  max by (namespace, pod, container) (
+                    kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}
+                  )
+                ),
+                "source", "restarts", "", ""
+              )
             )
 
         # PSI: share of wall time fully stalled on memory. Beta in 1.34, GA in 1.36.
@@ -107,15 +150,18 @@ spec:
               Container {{ `{{ $labels.container }}` }} in {{ `{{ $labels.namespace }}` }}/{{ `{{ $labels.pod }}` }}
               on node {{ `{{ $labels.node }}` }} has been in CrashLoopBackOff for
               {{ .Values.thresholds.crashLoopFor }}.
-            runbook_url: "https://github.com/OWNER/healops/blob/main/RUNBOOKS.md#crashloop_rollback"
+            runbook_url: "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback"
 
         # --- Runbook 2: Disk cleanup ------------------------------------------------------------
         # Two independent signals: the kubelet's own DiskPressure condition, and a filesystem
         # utilisation ratio. The condition is authoritative but lags; the ratio is what the
         # log-spammer chaos fixture actually moves.
         - alert: NodeDiskPressure
-          # node-exporter series carry a `node` label because kube-prometheus-stack's ServiceMonitor
-          # relabels __meta_kubernetes_pod_node_name onto them, so no join is needed here.
+          # node-exporter series carry a `node` label only because our kube-prometheus-stack values
+          # relabel __meta_kubernetes_pod_node_name onto them (k8s/prometheus/...-values.yaml); the
+          # stack's default ServiceMonitor gives `instance` alone. The filesystems watched are the
+          # ones logs live on -- `/`, or a separate `/var` or `/var/log` -- not only `/`, which a
+          # kind node does not even expose.
           expr: |
             (
               max by (node) (
@@ -126,10 +172,10 @@ spec:
             (
               max by (node) (
                 1 - (
-                  node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|ramfs", mountpoint="/"}
+                  node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|ramfs", mountpoint=~"/|/var|/var/log"}
                   /
                   clamp_min(
-                    node_filesystem_size_bytes{fstype!~"tmpfs|overlay|ramfs", mountpoint="/"},
+                    node_filesystem_size_bytes{fstype!~"tmpfs|overlay|ramfs", mountpoint=~"/|/var|/var/log"},
                     1
                   )
                 )
@@ -145,7 +191,7 @@ spec:
               Root filesystem on {{ `{{ $labels.node }}` }} is above
               {{ .Values.thresholds.diskUsedRatio }} utilisation, or the kubelet has set the
               DiskPressure condition.
-            runbook_url: "https://github.com/OWNER/healops/blob/main/RUNBOOKS.md#disk_cleanup"
+            runbook_url: "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#disk_cleanup"
 
         # --- Runbook 3: CPU scale-up ------------------------------------------------------------
         - alert: HighPodCPU
@@ -169,7 +215,7 @@ spec:
               {{ .Values.thresholds.highPodCpuFor }} (currently
               {{ `{{ $value | humanizePercentage }}` }}). The runbook checks whether an HPA owns
               this workload before touching replicas.
-            runbook_url: "https://github.com/OWNER/healops/blob/main/RUNBOOKS.md#cpu_scale_up"
+            runbook_url: "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#cpu_scale_up"
 
         # --- Runbook 4: OOM memory bump ---------------------------------------------------------
         - alert: KubePodOOMKilled
@@ -190,9 +236,9 @@ spec:
             description: >-
               {{ `{{ $labels.namespace }}` }}/{{ `{{ $labels.pod }}` }} container
               {{ `{{ $labels.container }}` }} recorded an OOM event in the last
-              {{ .Values.thresholds.oomWindow }}. Counted from container_oom_events_total, not from
-              the flapping last_terminated_reason gauge.
-            runbook_url: "https://github.com/OWNER/healops/blob/main/RUNBOOKS.md#oom_memory_bump"
+              {{ .Values.thresholds.oomWindow }}. Counted from container_oom_events_total, or where
+              cAdvisor cannot count, from restarts whose last termination was an OOM kill.
+            runbook_url: "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#oom_memory_bump"
 
         # --- Runbook 5: Node cordon + drain -----------------------------------------------------
         # This is the cause alert in the storm scenario: it has CAUSE_PRECEDENCE 0, so the pod-level
@@ -213,7 +259,7 @@ spec:
               The Ready condition on {{ `{{ $labels.node }}` }} has been false for
               {{ .Values.thresholds.nodeNotReadyFor }}. Pod-level alerts on this node are symptoms
               and are inhibited in Alertmanager, then correlated as evidence in the engine.
-            runbook_url: "https://github.com/OWNER/healops/blob/main/RUNBOOKS.md#node_drain"
+            runbook_url: "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#node_drain"
 
     # ---------------------------------------------------------------------------------------------
     # HealOps monitoring itself. Self-monitoring is a first-class feature, not an afterthought:
@@ -231,6 +277,19 @@ spec:
             description: >-
               healops_ledger_valid is 0. A tamper-evidence mechanism nobody checks is decoration;
               this is the check. Run `healopsctl audit --verify-chain` to find the broken sequence.
+
+        # The leader walks the chain hourly; two missed checks means nobody is looking. `max` over
+        # replicas, because followers never check and must not page for it.
+        - alert: HealOpsLedgerUnverified
+          expr: time() - max(healops_ledger_checked_timestamp_seconds) > 7200
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Nobody has verified the HealOps audit chain in two hours"
+            description: >-
+              The hourly chain walk has not run. Tamper-evidence is only as good as the last check:
+              confirm a leader exists and run `healopsctl audit --verify-chain`.
 
         - alert: HealOpsWatchdogActing
           expr: increase(healops_watchdog_actions_total[15m]) > 0

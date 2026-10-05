@@ -149,15 +149,22 @@ def plan(
     a refusal and 3 on a policy denial, so a script can assert that HealOps declines what it should.
     """
     import policy as policy_module
-    from policy import BudgetSnapshot, PromotionSnapshot, TargetView
-    from runbooks import load_all
+    from planner import plan_for
+    from policy import PolicyDecision, PromotionSnapshot
 
     incident_bundle = _load_bundle(bundle_path)
-    registry = load_all()
-
     alertname = incident_bundle.cause_alert.alertname
-    runbook = registry.for_alert(alertname)
-    if runbook is None:
+
+    # The same pure function the decision eval grades and the orchestrator runs, so what this
+    # prints is what production would decide -- GitOps preparation included.
+    result = plan_for(
+        incident_bundle,
+        promotion=PromotionSnapshot(mode=promotion),
+        active_policy=policy_module.load_policy(
+            policy_file or REPO_ROOT / "policy" / "remediation.yaml"
+        ),
+    )
+    if result.runbook is None:
         # An unrecognised alert escalates rather than being force-fitted to a runbook.
         console.print(
             f"[yellow]no runbook answers[/yellow] {alertname}; this incident would escalate "
@@ -165,26 +172,8 @@ def plan(
         )
         raise typer.Exit(EXIT_REFUSED)
 
-    target = incident_bundle.target
-    produced = runbook.plan(incident_bundle, target)
-
-    active_policy = policy_module.load_policy(
-        policy_file or REPO_ROOT / "policy" / "remediation.yaml"
-    )
-    decision = policy_module.evaluate(
-        produced,
-        TargetView(
-            kind=target.kind,
-            name=target.name,
-            namespace=target.namespace,
-            replicas=target.replicas,
-            labels=dict(target.labels),
-            annotations=dict(target.annotations),
-        ),
-        BudgetSnapshot(),
-        PromotionSnapshot(mode=promotion),
-        active_policy,
-    )
+    produced = result.plan
+    decision = result.policy or PolicyDecision(effect="deny")
 
     if as_json:
         console.print_json(
@@ -336,6 +325,97 @@ def breaker_status() -> None:
         console.print(f"  reason: {current.reason}  (owner {current.owner})")
     if current.until:
         console.print(f"  half-open at: {current.until.isoformat()}")
+
+
+# --- evidence: export, replay, audit -------------------------------------------------------------
+
+EVIDENCE_DIR = REPO_ROOT / "evidence"
+
+
+@app.command()
+def export(
+    incident_id: Annotated[int, typer.Argument(help="Incident to export.")],
+    out: Annotated[Path, typer.Option("--out", help="Directory to write into.")] = EVIDENCE_DIR,
+) -> None:
+    """Write an incident's content-addressed evidence bundle, named by its own sha256."""
+    import evidence
+
+    async def build(session):  # noqa: ANN001, ANN202
+        return await evidence.build(session, incident_id)
+
+    bundle = _with_session(build)
+    if bundle is None:
+        console.print(f"[red]no incident {incident_id}[/red]")
+        raise typer.Exit(EXIT_ERROR)
+    path = evidence.write(bundle, out)
+    console.print(f"{path.stem}  ->  {path}")
+
+
+@app.command()
+def replay(
+    ref: Annotated[
+        str, typer.Argument(help="A bundle's sha256 (or a unique prefix), or its path.")
+    ],
+    directory: Annotated[Path, typer.Option("--dir", help="Where bundles live.")] = EVIDENCE_DIR,
+) -> None:
+    """Reconstruct an incident from its evidence bundle alone: no cluster, no network, no database.
+
+    Byte-identical on every run. Exits 4 if the bundle does not match its own address or a ledger
+    entry inside it no longer matches its hash.
+    """
+    import evidence
+    import replay as replay_module
+
+    try:
+        digest, bundle = evidence.load(ref, directory)
+    except evidence.EvidenceError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(EXIT_ERROR) from exc
+    # Plain stdout, not rich: the output is a golden file and must not depend on the terminal.
+    sys.stdout.write(replay_module.render(bundle, digest))
+    if not evidence.verify(bundle).valid:
+        raise typer.Exit(EXIT_ERROR)
+
+
+@app.command()
+def audit(
+    verify_chain: Annotated[
+        bool, typer.Option("--verify-chain", help="Walk the whole ledger from GENESIS.")
+    ] = False,
+    bundle: Annotated[
+        str | None, typer.Option("--bundle", help="Verify one evidence bundle offline instead.")
+    ] = None,
+    directory: Annotated[Path, typer.Option("--dir", help="Where bundles live.")] = EVIDENCE_DIR,
+) -> None:
+    """Prove nobody edited the record. Exits 4 and names the sequence number on a break."""
+    import evidence
+    import ledger
+
+    if bundle is not None:
+        try:
+            digest, data = evidence.load(bundle, directory)
+        except evidence.EvidenceError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(EXIT_ERROR) from exc
+        status = evidence.verify(data)
+        label = f"bundle {digest[:16]}"
+    elif verify_chain:
+
+        async def walk(session):  # noqa: ANN001, ANN202
+            return await ledger.verify_chain(session)
+
+        status = _with_session(walk)
+        label = "ledger"
+    else:
+        console.print("pass --verify-chain, or --bundle <sha>")
+        raise typer.Exit(EXIT_ERROR)
+
+    if status.valid:
+        console.print(f"[green]{label}: {status.entries} entries, chain VALID[/green]")
+        return
+    console.print(f"[bold red]{label}: chain BROKEN at seq={status.broken_at_seq}[/bold red]")
+    console.print(f"  {status.detail}")
+    raise typer.Exit(EXIT_ERROR)
 
 
 if __name__ == "__main__":

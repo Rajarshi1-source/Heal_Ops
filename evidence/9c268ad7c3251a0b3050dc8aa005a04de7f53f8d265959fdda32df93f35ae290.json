@@ -1,0 +1,635 @@
+{
+  "alert_count": 2,
+  "alerts": [
+    {
+      "alertname": "HighPodCPU",
+      "fingerprint": "19eec4e2bcd2a648",
+      "id": 4,
+      "namespace": "chaos",
+      "node": "healops-worker3",
+      "pod": "cpu-burner-5879f48bb8-fmlmf",
+      "received_at": "2026-10-05T04:47:28.870058+00:00",
+      "role": "symptom",
+      "severity": "warning",
+      "starts_at": "2026-10-05T04:46:43.996000+00:00",
+      "status": "firing"
+    },
+    {
+      "alertname": "HighPodCPU",
+      "fingerprint": "5e1227c0d83bd651",
+      "id": 3,
+      "namespace": "chaos",
+      "node": "healops-worker2",
+      "pod": "cpu-burner-5879f48bb8-52tq4",
+      "received_at": "2026-10-05T04:47:28.870234+00:00",
+      "role": "cause",
+      "severity": "warning",
+      "starts_at": "2026-10-05T04:46:43.996000+00:00",
+      "status": "firing"
+    }
+  ],
+  "approvals": [],
+  "cause_alertname": "HighPodCPU",
+  "cause_scope": "workload",
+  "closed_at": null,
+  "correlation_reason": "new_incident",
+  "executions": [
+    {
+      "compensated": false,
+      "detail": "scaled to 4 replicas",
+      "durability": "ephemeral",
+      "expires_at": "2026-10-05T06:47:28.981836+00:00",
+      "finished_at": "2026-10-05T04:47:29.576938+00:00",
+      "gitops_managed": false,
+      "gitops_paused": false,
+      "id": 1,
+      "mode": "auto",
+      "plan_id": "01a10a63-67f0-7f3e-a267-130ee2053df1",
+      "pr_url": null,
+      "runbook": "cpu_scale_up",
+      "signals_before": {
+        "alert_firing": true,
+        "custom": {
+          "cpu_usage_ratio": 0.9998472880832795,
+          "throttle_ratio": 1.0
+        },
+        "memory_usage_ratio": 0.510498046875,
+        "new_alerts": [
+          "HighPodCPU"
+        ],
+        "oom_events": 0.0,
+        "pending_alerts": [
+          "CPUThrottlingHigh"
+        ],
+        "psi_full": 2.8796156710965704e-06,
+        "restarts": 0,
+        "throttle_ratio": 1.0
+      },
+      "started_at": "2026-10-05T04:47:29.543161+00:00",
+      "state_after": {
+        "annotations": {
+          "deployment.kubernetes.io/revision": "1",
+          "healops.io/chaos-fixture": "cpu-burner",
+          "meta.helm.sh/release-name": "chaos",
+          "meta.helm.sh/release-namespace": "chaos"
+        },
+        "containers": [
+          {
+            "cpu_limit": "400m",
+            "cpu_request": "50m",
+            "cpu_resize_policy": null,
+            "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+            "memory_limit": "64Mi",
+            "memory_request": "32Mi",
+            "memory_resize_policy": null,
+            "name": "cpu-burner"
+          }
+        ],
+        "kind": "Deployment",
+        "name": "cpu-burner",
+        "namespace": "chaos",
+        "replicas": 4,
+        "revision": "1",
+        "template_digest": "313d7e4abb64ea903e83cf26898231a26183ba11cb69a1426d6715b956b84989"
+      },
+      "state_before": {
+        "annotations": {
+          "deployment.kubernetes.io/revision": "1",
+          "healops.io/chaos-fixture": "cpu-burner",
+          "meta.helm.sh/release-name": "chaos",
+          "meta.helm.sh/release-namespace": "chaos"
+        },
+        "containers": [
+          {
+            "cpu_limit": "400m",
+            "cpu_request": "50m",
+            "cpu_resize_policy": null,
+            "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+            "memory_limit": "64Mi",
+            "memory_request": "32Mi",
+            "memory_resize_policy": null,
+            "name": "cpu-burner"
+          }
+        ],
+        "kind": "Deployment",
+        "name": "cpu-burner",
+        "namespace": "chaos",
+        "replicas": 2,
+        "revision": "1",
+        "template_digest": "313d7e4abb64ea903e83cf26898231a26183ba11cb69a1426d6715b956b84989"
+      },
+      "status": "remediated"
+    }
+  ],
+  "format_version": 1,
+  "id": 2,
+  "ledger": [
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "fab76a4b41de8ac50e658057ad7f2ca24610e89eeb7fd2afa12b8724b898c7d4",
+      "incident_id": 2,
+      "occurred_at": "2026-10-05T04:47:28.870234+00:00",
+      "payload": {
+        "alertname": "HighPodCPU",
+        "correlation_reason": "new_incident",
+        "created_incident": true,
+        "fingerprint": "5e1227c0d83bd651",
+        "role": "cause",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/cpu-burner"
+      },
+      "prev_hash": "04a9e510068ae02ce9ededfb16754aeb469be75c91d75460f39a93f050bebd73",
+      "seq": 5
+    },
+    {
+      "actor": "healops",
+      "event_type": "state_transition",
+      "execution_id": null,
+      "hash": "50d48925fa7fbf22342d110c9a42cceb22e518cd2407a64da0b2e42520faf8cf",
+      "incident_id": 2,
+      "occurred_at": "2026-10-05T04:47:28.870058+00:00",
+      "payload": {
+        "alertname": "HighPodCPU",
+        "correlation_reason": "symptom_of_workload_cause",
+        "created_incident": false,
+        "fingerprint": "19eec4e2bcd2a648",
+        "role": "symptom",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/cpu-burner"
+      },
+      "prev_hash": "fab76a4b41de8ac50e658057ad7f2ca24610e89eeb7fd2afa12b8724b898c7d4",
+      "seq": 6
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "664d1908b7b66dc72ae46b34638592163151e7741de4968391f44b2416488b93",
+      "incident_id": 2,
+      "occurred_at": "2026-10-05T04:47:28.981836+00:00",
+      "payload": {
+        "alertname": "HighPodCPU",
+        "input": {
+          "cause_alert": {
+            "alertname": "HighPodCPU",
+            "annotations": {
+              "description": "Container cpu-burner in chaos/cpu-burner-5879f48bb8-52tq4 has used more than 0.8 of its CPU limit for 5m (currently 99.99%). The runbook checks whether an HPA owns this workload before touching replicas.",
+              "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#cpu_scale_up",
+              "summary": "High CPU on chaos/cpu-burner-5879f48bb8-52tq4"
+            },
+            "container": "cpu-burner",
+            "fingerprint": "5e1227c0d83bd651",
+            "labels": {
+              "alertname": "HighPodCPU",
+              "container": "cpu-burner",
+              "healops_runbook": "cpu_scale_up",
+              "namespace": "chaos",
+              "node": "healops-worker2",
+              "pod": "cpu-burner-5879f48bb8-52tq4",
+              "prometheus": "monitoring/kps-prometheus",
+              "severity": "warning"
+            },
+            "namespace": "chaos",
+            "node": "healops-worker2",
+            "pod": "cpu-burner-5879f48bb8-52tq4",
+            "severity": "warning",
+            "starts_at": "2026-10-05T04:46:43.996000+00:00",
+            "status": "firing"
+          },
+          "cause_scope": "workload",
+          "correlation_reason": "new_incident",
+          "expected_effect": null,
+          "expected_runbook": null,
+          "format_version": 1,
+          "incident_id": "2",
+          "label_note": null,
+          "opened_at": "2026-10-05T04:47:28.870234+00:00",
+          "symptom_alerts": [
+            {
+              "alertname": "HighPodCPU",
+              "annotations": {
+                "description": "Container cpu-burner in chaos/cpu-burner-5879f48bb8-fmlmf has used more than 0.8 of its CPU limit for 5m (currently 99.98%). The runbook checks whether an HPA owns this workload before touching replicas.",
+                "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#cpu_scale_up",
+                "summary": "High CPU on chaos/cpu-burner-5879f48bb8-fmlmf"
+              },
+              "container": "cpu-burner",
+              "fingerprint": "19eec4e2bcd2a648",
+              "labels": {
+                "alertname": "HighPodCPU",
+                "container": "cpu-burner",
+                "healops_runbook": "cpu_scale_up",
+                "namespace": "chaos",
+                "node": "healops-worker3",
+                "pod": "cpu-burner-5879f48bb8-fmlmf",
+                "prometheus": "monitoring/kps-prometheus",
+                "severity": "warning"
+              },
+              "namespace": "chaos",
+              "node": "healops-worker3",
+              "pod": "cpu-burner-5879f48bb8-fmlmf",
+              "severity": "warning",
+              "starts_at": "2026-10-05T04:46:43.996000+00:00",
+              "status": "firing"
+            }
+          ],
+          "target": {
+            "annotations": {
+              "deployment.kubernetes.io/revision": "1",
+              "healops.io/chaos-fixture": "cpu-burner",
+              "meta.helm.sh/release-name": "chaos",
+              "meta.helm.sh/release-namespace": "chaos"
+            },
+            "autoscaler": null,
+            "containers": [
+              {
+                "cpu_limit_millis": 400,
+                "cpu_request_millis": 50,
+                "cpu_resize_policy": null,
+                "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+                "memory_limit_mib": 64,
+                "memory_peak_mib": null,
+                "memory_request_mib": 32,
+                "memory_resize_policy": null,
+                "name": "cpu-burner",
+                "restart_count": 0
+              }
+            ],
+            "drained_workloads": [],
+            "gitops_manager": "unmanaged",
+            "kind": "Deployment",
+            "labels": {
+              "app": "cpu-burner",
+              "app.kubernetes.io/managed-by": "Helm",
+              "app.kubernetes.io/name": "cpu-burner",
+              "app.kubernetes.io/part-of": "chaos-app"
+            },
+            "name": "cpu-burner",
+            "namespace": "chaos",
+            "node": null,
+            "node_state": null,
+            "peer_nodes": [],
+            "pods": [
+              "cpu-burner-5879f48bb8-52tq4",
+              "cpu-burner-5879f48bb8-fmlmf"
+            ],
+            "previous_image": null,
+            "previous_revision": null,
+            "previous_template_digest": null,
+            "ready_replicas": 2,
+            "replicas": 2,
+            "revision": 1,
+            "server_supports_in_place_resize": true,
+            "template_digest": "313d7e4abb64ea903e83cf26898231a26183ba11cb69a1426d6715b956b84989"
+          }
+        },
+        "runbook": "cpu_scale_up",
+        "target": "chaos/Deployment/cpu-burner"
+      },
+      "prev_hash": "50d48925fa7fbf22342d110c9a42cceb22e518cd2407a64da0b2e42520faf8cf",
+      "seq": 7
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan",
+      "execution_id": null,
+      "hash": "98a6758b394c1476fdafaf33d2e6035cea9129210f8a96906bd9ca1226d70e26",
+      "incident_id": 2,
+      "occurred_at": "2026-10-05T04:47:28.981836+00:00",
+      "payload": {
+        "actions": [
+          {
+            "body": {
+              "from_replicas": 2,
+              "replicas": 4
+            },
+            "name": "cpu-burner",
+            "namespace": "chaos",
+            "resource": "apps/v1/Deployment",
+            "subresource": null,
+            "verb": "scale"
+          }
+        ],
+        "blast_radius": {
+          "namespaces": [
+            "chaos"
+          ],
+          "nodes": 0,
+          "pods": 2,
+          "user_facing": false
+        },
+        "blast_radius_score": 2,
+        "compensation": [
+          {
+            "body": {
+              "from_replicas": 4,
+              "replicas": 2
+            },
+            "name": "cpu-burner",
+            "namespace": "chaos",
+            "resource": "apps/v1/Deployment",
+            "subresource": null,
+            "verb": "scale"
+          }
+        ],
+        "confidence": 0.93,
+        "cost_delta_inr_month": 198.76,
+        "durability": "ephemeral",
+        "expected_signal": {
+          "alert_should_clear": "HighPodCPU",
+          "queries": {
+            "cpu_usage_ratio": "max(healops:container_cpu_usage_ratio:rate5m{namespace=\"chaos\",pod=~\"cpu-burner-.*\"})",
+            "throttle_ratio": "max(healops:container_cpu_throttle_ratio:rate5m{namespace=\"chaos\",pod=~\"cpu-burner-.*\"})"
+          },
+          "thresholds": {
+            "cpu_usage_ratio": 0.8,
+            "throttle_ratio": 0.05
+          },
+          "window_seconds": 300
+        },
+        "gitops_managed": false,
+        "incident_id": "2",
+        "plan_id": "",
+        "planner_version": "0",
+        "refusal_reason": null,
+        "reversibility": "reversible",
+        "runbook": "cpu_scale_up",
+        "summary": "scale chaos/cpu-burner from 2 to 4 replicas (ceiling 10, expires in 2h)",
+        "target_kind": "Deployment",
+        "target_name": "cpu-burner",
+        "target_namespace": "chaos",
+        "ttl_seconds": 7200
+      },
+      "prev_hash": "664d1908b7b66dc72ae46b34638592163151e7741de4968391f44b2416488b93",
+      "seq": 8
+    },
+    {
+      "actor": "healops",
+      "event_type": "policy",
+      "execution_id": null,
+      "hash": "ab31b68daf96335ccfc81764ee441c9450c9254febe494b8804ac0702733a067",
+      "incident_id": 2,
+      "occurred_at": "2026-10-05T04:47:28.981836+00:00",
+      "payload": {
+        "decision": "allow",
+        "messages": [],
+        "reasons": []
+      },
+      "prev_hash": "98a6758b394c1476fdafaf33d2e6035cea9129210f8a96906bd9ca1226d70e26",
+      "seq": 9
+    },
+    {
+      "actor": "healops",
+      "event_type": "execute",
+      "execution_id": 1,
+      "hash": "5f43f920793f8a74a5a88d986e28f68f58a3a3eb5bda006b84c7f49d5ffbc759",
+      "incident_id": 2,
+      "occurred_at": "2026-10-05T04:47:28.981836+00:00",
+      "payload": {
+        "detail": "scaled to 4 replicas",
+        "ok": true,
+        "plan_id": "01a10a63-67f0-7f3e-a267-130ee2053df1",
+        "state_after": {
+          "annotations": {
+            "deployment.kubernetes.io/revision": "1",
+            "healops.io/chaos-fixture": "cpu-burner",
+            "meta.helm.sh/release-name": "chaos",
+            "meta.helm.sh/release-namespace": "chaos"
+          },
+          "containers": [
+            {
+              "cpu_limit": "400m",
+              "cpu_request": "50m",
+              "cpu_resize_policy": null,
+              "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+              "memory_limit": "64Mi",
+              "memory_request": "32Mi",
+              "memory_resize_policy": null,
+              "name": "cpu-burner"
+            }
+          ],
+          "kind": "Deployment",
+          "name": "cpu-burner",
+          "namespace": "chaos",
+          "replicas": 4,
+          "revision": "1",
+          "template_digest": "313d7e4abb64ea903e83cf26898231a26183ba11cb69a1426d6715b956b84989"
+        },
+        "state_before": {
+          "annotations": {
+            "deployment.kubernetes.io/revision": "1",
+            "healops.io/chaos-fixture": "cpu-burner",
+            "meta.helm.sh/release-name": "chaos",
+            "meta.helm.sh/release-namespace": "chaos"
+          },
+          "containers": [
+            {
+              "cpu_limit": "400m",
+              "cpu_request": "50m",
+              "cpu_resize_policy": null,
+              "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+              "memory_limit": "64Mi",
+              "memory_request": "32Mi",
+              "memory_resize_policy": null,
+              "name": "cpu-burner"
+            }
+          ],
+          "kind": "Deployment",
+          "name": "cpu-burner",
+          "namespace": "chaos",
+          "replicas": 2,
+          "revision": "1",
+          "template_digest": "313d7e4abb64ea903e83cf26898231a26183ba11cb69a1426d6715b956b84989"
+        }
+      },
+      "prev_hash": "ab31b68daf96335ccfc81764ee441c9450c9254febe494b8804ac0702733a067",
+      "seq": 10
+    },
+    {
+      "actor": "healops",
+      "event_type": "verify",
+      "execution_id": 1,
+      "hash": "533f81018193ceab5d573c818d133a6dd2e3cf35edd33f00ffd086f02a47e9be",
+      "incident_id": 2,
+      "occurred_at": "2026-10-05T04:52:41.306349+00:00",
+      "payload": {
+        "alert_cleared": true,
+        "new_alerts": [],
+        "outcome": "remediated",
+        "reasons": [
+          "alert cleared, signals within thresholds, no new alerts on the target"
+        ],
+        "signals_after": {
+          "custom:cpu_usage_ratio": 0.6111503761390125,
+          "custom:throttle_ratio": 0.01942090395480226,
+          "memory_usage_ratio": 0.48455810546875,
+          "oom_events": 0.0,
+          "psi_full": 7.874251591440182e-05,
+          "restarts": 0.0,
+          "throttle_ratio": 0.01942090395480226
+        },
+        "signals_before": {
+          "custom:cpu_usage_ratio": 0.9998472880832795,
+          "custom:throttle_ratio": 1.0,
+          "memory_usage_ratio": 0.510498046875,
+          "oom_events": 0.0,
+          "psi_full": 2.8796156710965704e-06,
+          "restarts": 0.0,
+          "throttle_ratio": 1.0
+        }
+      },
+      "prev_hash": "35d393c13b73b1dfed01b2ee2e4ea7eb547ef4a55c3ba819447235b069c9e4f3",
+      "seq": 14
+    }
+  ],
+  "mode": "auto",
+  "namespace": "chaos",
+  "opened_at": "2026-10-05T04:47:28.870234+00:00",
+  "outcome": "remediated",
+  "outcome_detail": "remediated",
+  "plans": [
+    {
+      "actions": [
+        {
+          "body": {
+            "from_replicas": 2,
+            "replicas": 4
+          },
+          "name": "cpu-burner",
+          "namespace": "chaos",
+          "resource": "apps/v1/Deployment",
+          "subresource": null,
+          "verb": "scale"
+        }
+      ],
+      "blast_radius": {
+        "namespaces": [
+          "chaos"
+        ],
+        "nodes": 0,
+        "pods": 2,
+        "score": 2,
+        "user_facing": false
+      },
+      "compensation": [
+        {
+          "body": {
+            "from_replicas": 4,
+            "replicas": 2
+          },
+          "name": "cpu-burner",
+          "namespace": "chaos",
+          "resource": "apps/v1/Deployment",
+          "subresource": null,
+          "verb": "scale"
+        }
+      ],
+      "confidence": 0.93,
+      "cost_delta_inr_month": 198.76,
+      "created_at": "2026-10-05T04:47:28.981836+00:00",
+      "durability": "ephemeral",
+      "expected_signal": {
+        "alert_should_clear": "HighPodCPU",
+        "queries": {
+          "cpu_usage_ratio": "max(healops:container_cpu_usage_ratio:rate5m{namespace=\"chaos\",pod=~\"cpu-burner-.*\"})",
+          "throttle_ratio": "max(healops:container_cpu_throttle_ratio:rate5m{namespace=\"chaos\",pod=~\"cpu-burner-.*\"})"
+        },
+        "thresholds": {
+          "cpu_usage_ratio": 0.8,
+          "throttle_ratio": 0.05
+        },
+        "window_seconds": 300
+      },
+      "id": "01a10a63-67f0-7f3e-a267-130ee2053df1",
+      "planner_version": "1.0.0",
+      "policy_decision": "allow",
+      "policy_reasons": [],
+      "refusal_reason": null,
+      "reversibility": "reversible",
+      "runbook": "cpu_scale_up",
+      "summary": "scale chaos/cpu-burner from 2 to 4 replicas (ceiling 10, expires in 2h)",
+      "target_key": "chaos/Deployment/cpu-burner",
+      "ttl_seconds": 7200
+    }
+  ],
+  "runbook": "cpu_scale_up",
+  "state": "remediated",
+  "summary": "scale chaos/cpu-burner from 2 to 4 replicas (ceiling 10, expires in 2h)",
+  "target_key": "chaos/Deployment/cpu-burner",
+  "trail": [
+    {
+      "detail": "new_incident",
+      "label": "2 alert(s)",
+      "stage": "correlate",
+      "state": "passed"
+    },
+    {
+      "detail": "scale chaos/cpu-burner from 2 to 4 replicas (ceiling 10, expires in 2h)",
+      "label": "cpu_scale_up",
+      "stage": "plan",
+      "state": "passed"
+    },
+    {
+      "detail": "",
+      "label": "allowed",
+      "stage": "policy",
+      "state": "passed"
+    },
+    {
+      "detail": "within policy, no human needed",
+      "label": "auto",
+      "stage": "gate",
+      "state": "passed"
+    },
+    {
+      "detail": "scaled to 4 replicas",
+      "label": "applied",
+      "stage": "execute",
+      "state": "passed"
+    },
+    {
+      "detail": "alert cleared, signals within thresholds, no new alerts on the target",
+      "label": "remediated",
+      "stage": "verify",
+      "state": "passed"
+    },
+    {
+      "detail": "",
+      "label": "remediated",
+      "stage": "outcome",
+      "state": "passed"
+    }
+  ],
+  "verifications": [
+    {
+      "alert_cleared": true,
+      "checked_at": "2026-10-05T04:52:41.306349+00:00",
+      "compensated": false,
+      "execution_id": 1,
+      "outcome": "remediated",
+      "reasons": [
+        "alert cleared, signals within thresholds, no new alerts on the target"
+      ],
+      "signals_after": {
+        "custom:cpu_usage_ratio": 0.6111503761390125,
+        "custom:throttle_ratio": 0.01942090395480226,
+        "memory_usage_ratio": 0.48455810546875,
+        "oom_events": 0.0,
+        "psi_full": 7.874251591440182e-05,
+        "restarts": 0.0,
+        "throttle_ratio": 0.01942090395480226
+      },
+      "signals_before": {
+        "custom:cpu_usage_ratio": 0.9998472880832795,
+        "custom:throttle_ratio": 1.0,
+        "memory_usage_ratio": 0.510498046875,
+        "oom_events": 0.0,
+        "psi_full": 2.8796156710965704e-06,
+        "restarts": 0.0,
+        "throttle_ratio": 1.0
+      },
+      "window_seconds": 300
+    }
+  ]
+}

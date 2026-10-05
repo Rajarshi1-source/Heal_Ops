@@ -14,6 +14,8 @@ import redis.asyncio as redis
 
 from config import get_settings
 
+SOCKET_TIMEOUT_SECONDS = 5
+
 _client: redis.Redis | None = None
 
 
@@ -34,7 +36,7 @@ def get_client() -> redis.Redis:
         _client = redis.from_url(
             settings.redis_url,
             decode_responses=True,
-            socket_timeout=5,
+            socket_timeout=SOCKET_TIMEOUT_SECONDS,
             socket_connect_timeout=3,
             health_check_interval=30,
             retry_on_timeout=True,

@@ -1,0 +1,110 @@
+{
+  "cause_alert": {
+    "alertname": "KubeNodeNotReady",
+    "annotations": {
+      "description": "The Ready condition on healops-worker2 has been false for 3m. Pod-level alerts on this node are symptoms and are inhibited in Alertmanager, then correlated as evidence in the engine.",
+      "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#node_drain",
+      "summary": "Node healops-worker2 has been NotReady for 3m"
+    },
+    "container": null,
+    "fingerprint": "db02b386b5d06d3c",
+    "labels": {
+      "alertname": "KubeNodeNotReady",
+      "healops_runbook": "node_drain",
+      "node": "healops-worker2",
+      "prometheus": "monitoring/kps-prometheus",
+      "severity": "critical"
+    },
+    "namespace": null,
+    "node": "healops-worker2",
+    "pod": null,
+    "severity": "critical",
+    "starts_at": "2026-10-05T05:42:43.996000+00:00",
+    "status": "firing"
+  },
+  "cause_scope": "node",
+  "correlation_reason": "new_incident",
+  "expected_effect": "require_approval",
+  "expected_runbook": "node_drain",
+  "format_version": 1,
+  "incident_id": "e2e-node-dead-kubelet",
+  "label_note": "A genuinely dead kubelet with capacity elsewhere: a drain is always a human's call. [captured end to end: incident #35, evidence fa26534659b0]",
+  "opened_at": "2026-10-05T05:43:28.452492+00:00",
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "node.alpha.kubernetes.io/ttl": "0",
+      "volumes.kubernetes.io/controller-managed-attach-detach": "true"
+    },
+    "autoscaler": null,
+    "containers": [],
+    "drained_workloads": [
+      "chaos/Deployment/cpu-burner",
+      "chaos/Deployment/crashy-api",
+      "chaos/Deployment/hungry-worker",
+      "chaos/Deployment/log-spammer"
+    ],
+    "gitops_manager": "unmanaged",
+    "kind": "Node",
+    "labels": {
+      "beta.kubernetes.io/arch": "amd64",
+      "beta.kubernetes.io/os": "linux",
+      "healops.io/pool": "general",
+      "kubernetes.io/arch": "amd64",
+      "kubernetes.io/hostname": "healops-worker2",
+      "kubernetes.io/os": "linux"
+    },
+    "name": "healops-worker2",
+    "namespace": null,
+    "node": "healops-worker2",
+    "node_state": {
+      "allocatable_cpu_millis": 18000,
+      "allocatable_memory_mib": 7665,
+      "name": "healops-worker2",
+      "pod_count": 7,
+      "ready": false,
+      "requested_cpu_millis": 200,
+      "requested_memory_mib": 320,
+      "schedulable": true
+    },
+    "peer_nodes": [
+      {
+        "allocatable_cpu_millis": 18000,
+        "allocatable_memory_mib": 7665,
+        "name": "healops-worker",
+        "pod_count": 0,
+        "ready": true,
+        "requested_cpu_millis": 590,
+        "requested_memory_mib": 2090,
+        "schedulable": true
+      },
+      {
+        "allocatable_cpu_millis": 18000,
+        "allocatable_memory_mib": 7665,
+        "name": "healops-worker3",
+        "pod_count": 0,
+        "ready": true,
+        "requested_cpu_millis": 100,
+        "requested_memory_mib": 50,
+        "schedulable": true
+      }
+    ],
+    "pods": [
+      "chaos/cpu-burner-5879f48bb8-2cvvx",
+      "chaos/cpu-burner-5879f48bb8-52tq4",
+      "chaos/crashy-api-6775f995fc-hjqbs",
+      "chaos/crashy-api-6775f995fc-rmlvs",
+      "chaos/crashy-api-6775f995fc-x66wq",
+      "chaos/hungry-worker-7ff88d694d-gfcds",
+      "chaos/log-spammer-74647d66c7-89v7q"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 0,
+    "replicas": 1,
+    "revision": null,
+    "server_supports_in_place_resize": true,
+    "template_digest": null
+  }
+}

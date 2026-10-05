@@ -1,0 +1,84 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodCrashLooping",
+    "annotations": {
+      "description": "Container crashy in chaos/chaos-state-0 on node healops-worker has been in CrashLoopBackOff for 2m.",
+      "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+      "summary": "Pod chaos/chaos-state-0 is crash looping"
+    },
+    "container": "crashy",
+    "fingerprint": "04b954c625032ba3",
+    "labels": {
+      "alertname": "KubePodCrashLooping",
+      "container": "crashy",
+      "healops_runbook": "crashloop_rollback",
+      "namespace": "chaos",
+      "node": "healops-worker",
+      "pod": "chaos-state-0",
+      "prometheus": "monitoring/kps-prometheus",
+      "severity": "critical"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker",
+    "pod": "chaos-state-0",
+    "severity": "critical",
+    "starts_at": "2026-10-05T05:09:43.996000+00:00",
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "new_incident",
+  "expected_effect": "deny",
+  "expected_runbook": "crashloop_rollback",
+  "format_version": 1,
+  "incident_id": "e2e-crashloop-statefulset",
+  "label_note": "Stateful workloads are never rolled back by automation (deny-protected-workloads). [captured end to end: incident #7, evidence 9b89cbd592a0]",
+  "opened_at": "2026-10-05T05:11:28.709561+00:00",
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "meta.helm.sh/release-name": "chaos",
+      "meta.helm.sh/release-namespace": "chaos"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": 50,
+        "cpu_request_millis": 10,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 64,
+        "memory_peak_mib": null,
+        "memory_request_mib": 32,
+        "memory_resize_policy": null,
+        "name": "crashy",
+        "restart_count": 6
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "StatefulSet",
+    "labels": {
+      "app": "chaos-state",
+      "app.kubernetes.io/managed-by": "Helm",
+      "app.kubernetes.io/name": "chaos-state",
+      "app.kubernetes.io/part-of": "chaos-app",
+      "healops.io/expected-decision": "deny"
+    },
+    "name": "chaos-state",
+    "namespace": "chaos",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "chaos-state-0"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 0,
+    "replicas": 1,
+    "revision": null,
+    "server_supports_in_place_resize": true,
+    "template_digest": null
+  }
+}

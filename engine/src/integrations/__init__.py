@@ -1,1 +1,1 @@
-"""Outbound integrations: Slack, S3/MinIO, Prometheus, Alertmanager, GitHub."""
+"""Outbound integrations: Slack, S3, Prometheus, Alertmanager, GitHub."""

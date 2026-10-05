@@ -12,13 +12,14 @@ Two things here are easy to get wrong and are handled explicitly:
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any
 
 import structlog
 from kubernetes.client.rest import ApiException
 
-from k8s.client import apps_v1, autoscaling_v2, call
+from k8s.client import apps_v1, autoscaling_v2, call, serialise
 
 log = structlog.get_logger(__name__)
 
@@ -80,22 +81,43 @@ async def previous_revision(namespace: str, name: str) -> Revision | None:
     return revisions[1] if len(revisions) > 1 else None
 
 
+# Added by the ReplicaSet controller to its own copy of the template. `kubectl rollout undo` strips
+# it before restoring a template, and so does this: it names a ReplicaSet, not a declared intent.
+POD_TEMPLATE_HASH = "pod-template-hash"
+
+
+def rollback_patch(template: dict[str, Any], resource_version: str) -> list[dict[str, Any]]:
+    """The JSON patch that restores a pod template exactly -- what `kubectl rollout undo` sends.
+
+    A **replace**, not a strategic merge. A strategic merge only adds and updates list entries, so
+    "rolling back" from a revision that added an env var would keep the env var -- the pods would
+    go on crashing, on a rollback that changed nothing. The leading `test` is the optimistic
+    concurrency precondition: someone else's change since planning fails the whole patch.
+    """
+    restored = copy.deepcopy(template)
+    labels = (restored.get("metadata") or {}).get("labels") or {}
+    labels.pop(POD_TEMPLATE_HASH, None)
+    return [
+        {"op": "test", "path": "/metadata/resourceVersion", "value": resource_version},
+        {"op": "replace", "path": "/spec/template", "value": restored},
+    ]
+
+
 async def rollback_to(namespace: str, name: str, template: Any, resource_version: str) -> Any:
-    """Patch the pod template back to a previous revision, with a concurrency precondition."""
-    body = {
-        "metadata": {"resourceVersion": resource_version},
-        "spec": {"template": template},
-    }
+    """Restore the pod template of a previous revision, with a concurrency precondition."""
+    serialised = template if isinstance(template, dict) else serialise(template)
     try:
         return await call(
             "patch_deployment",
             apps_v1().patch_namespaced_deployment,
             name,
             namespace,
-            body,
+            rollback_patch(serialised, resource_version),
         )
     except ApiException as exc:
-        if exc.status == 409:
+        # A JSON patch whose `test` fails is rejected as 422, not 409. Either way the object moved
+        # under us, and the answer is the same: re-plan, never retry blindly.
+        if exc.status == 409 or (exc.status == 422 and "test" in str(exc.body or "")):
             raise ConflictError(
                 f"{namespace}/{name} changed while we were planning; re-planning"
             ) from exc
@@ -109,24 +131,40 @@ async def patch(namespace: str, name: str, body: dict[str, Any]) -> Any:
     )
 
 
+def scale_patch(replicas: int, expect_replicas: int | None) -> list[dict[str, Any]]:
+    """The JSON patch for a scale, preconditioned on the field this runbook owns.
+
+    Not on `resourceVersion`: the Deployment controller rewrites status every time a pod becomes
+    ready, so straight after a scale-out the version moves every few seconds, and a version
+    precondition failed the very compensation it was meant to protect. What must not be
+    overwritten is a replica count somebody ELSE chose -- so that is what the `test` checks.
+    """
+    patch: list[dict[str, Any]] = []
+    if expect_replicas is not None:
+        patch.append({"op": "test", "path": "/spec/replicas", "value": expect_replicas})
+    patch.append({"op": "replace", "path": "/spec/replicas", "value": replicas})
+    return patch
+
+
 async def scale(
-    namespace: str, name: str, replicas: int, resource_version: str | None = None
+    namespace: str, name: str, replicas: int, expect_replicas: int | None = None
 ) -> Any:
-    """Set replica count through the `scale` subresource."""
-    body: dict[str, Any] = {"spec": {"replicas": replicas}}
-    if resource_version:
-        body["metadata"] = {"resourceVersion": resource_version}
+    """Set the replica count through the `scale` subresource, if it is still `expect_replicas`."""
     try:
         return await call(
             "patch_deployment_scale",
             apps_v1().patch_namespaced_deployment_scale,
             name,
             namespace,
-            body,
+            scale_patch(replicas, expect_replicas),
         )
     except ApiException as exc:
-        if exc.status == 409:
-            raise ConflictError(f"{namespace}/{name} scale changed under us; re-planning") from exc
+        # A failed `test` is a 422: someone else set a different count since we looked.
+        if exc.status == 409 or (exc.status == 422 and "test" in str(exc.body or "")):
+            raise ConflictError(
+                f"{namespace}/{name} replicas changed under us (expected {expect_replicas}); "
+                "re-planning"
+            ) from exc
         raise
 
 

@@ -247,3 +247,42 @@ def verify_entries(entries: list[dict[str, Any]]) -> ChainStatus:
             )
         prev = row["hash"]
     return ChainStatus(valid=True, entries=len(entries))
+
+
+def verify_links(entries: list[dict[str, Any]]) -> ChainStatus:
+    """Offline verification of one incident's slice of the chain -- the evidence-bundle case.
+
+    A bundle carries only its own incident's entries, and other incidents' entries interleave with
+    them in the global chain, so the slice cannot be walked from GENESIS. What it can prove, with
+    no database: every entry's hash commits to its own content and its stated predecessor, and
+    wherever two entries are adjacent in the global sequence, the second names the first. Editing
+    any entry in the bundle -- payload, actor, time -- breaks its hash. The full walk from GENESIS
+    is `verify_chain`, against the database.
+    """
+    previous: dict[str, Any] | None = None
+    for i, row in enumerate(sorted(entries, key=lambda e: e["seq"])):
+        entry = build_entry(
+            row["event_type"],
+            row["payload"],
+            datetime.fromisoformat(row["occurred_at"]),
+            row.get("actor", "healops"),
+            row.get("incident_id"),
+            row.get("execution_id"),
+        )
+        if compute_hash(row["prev_hash"], entry) != row["hash"]:
+            return ChainStatus(
+                valid=False,
+                entries=i,
+                broken_at_seq=row["seq"],
+                detail=f"entry seq={row['seq']} does not match its hash: it was altered",
+            )
+        adjacent = previous is not None and row["seq"] == previous["seq"] + 1
+        if adjacent and previous is not None and row["prev_hash"] != previous["hash"]:
+            return ChainStatus(
+                valid=False,
+                entries=i,
+                broken_at_seq=row["seq"],
+                detail=f"seq={row['seq']} does not name seq={previous['seq']} as predecessor",
+            )
+        previous = row
+    return ChainStatus(valid=True, entries=len(entries))

@@ -166,6 +166,17 @@ export interface LedgerEntry {
   hash: string;
 }
 
+/**
+ * The incident's content-addressed evidence bundle, as `GET /api/incidents/{id}/evidence` returns
+ * it. `replay` is byte-for-byte what `healopsctl replay` prints offline -- the same golden format,
+ * so the page and the CLI can never tell two different stories. The bundle itself is not typed
+ * here: the page shows its address, and an auditor verifies it with the CLI, not the browser.
+ */
+export interface Evidence {
+  sha256: string;
+  replay: string;
+}
+
 export interface IncidentDetail extends IncidentSummary {
   closed_at: string | null;
   alerts: Alert[];

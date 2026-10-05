@@ -1,0 +1,125 @@
+{
+  "cause_alert": {
+    "alertname": "KubeNodeNotReady",
+    "annotations": {},
+    "container": null,
+    "fingerprint": "scenario-drain-platform-node",
+    "labels": {
+      "alertname": "KubeNodeNotReady",
+      "node": "healops-worker",
+      "severity": "warning"
+    },
+    "namespace": null,
+    "node": "healops-worker",
+    "pod": null,
+    "severity": "warning",
+    "starts_at": null,
+    "status": "firing"
+  },
+  "cause_scope": "node",
+  "correlation_reason": "captured_by_chaos_harness",
+  "expected_effect": "deny",
+  "expected_runbook": "node_drain",
+  "format_version": 1,
+  "incident_id": "drain-platform-node",
+  "label_note": "The node hosts HealOps itself, so a drain would move HealOps' own pods (deny-self-remediation). [target captured live; alert synthesised]",
+  "opened_at": null,
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "node.alpha.kubernetes.io/ttl": "0",
+      "volumes.kubernetes.io/controller-managed-attach-detach": "true"
+    },
+    "autoscaler": null,
+    "containers": [],
+    "drained_workloads": [
+      "chaos/Deployment/hands-off-api",
+      "chaos/Deployment/lonely-api",
+      "chaos/Deployment/restart-on-resize",
+      "chaos/StatefulSet/chaos-state",
+      "healops/Deployment/healops-dashboard",
+      "healops/Deployment/healops-engine",
+      "healops/Deployment/healops-postgres",
+      "healops/Deployment/healops-s3",
+      "healops/Deployment/healops-valkey",
+      "monitoring/Deployment/kps-grafana",
+      "monitoring/Deployment/kps-kube-state-metrics",
+      "monitoring/Deployment/kps-operator",
+      "monitoring/StatefulSet/alertmanager-kps-alertmanager",
+      "monitoring/StatefulSet/prometheus-kps-prometheus"
+    ],
+    "gitops_manager": "unmanaged",
+    "kind": "Node",
+    "labels": {
+      "beta.kubernetes.io/arch": "amd64",
+      "beta.kubernetes.io/os": "linux",
+      "healops.io/pool": "platform",
+      "kubernetes.io/arch": "amd64",
+      "kubernetes.io/hostname": "healops-worker",
+      "kubernetes.io/os": "linux"
+    },
+    "name": "healops-worker",
+    "namespace": null,
+    "node": "healops-worker",
+    "node_state": {
+      "allocatable_cpu_millis": 18000,
+      "allocatable_memory_mib": 7665,
+      "name": "healops-worker",
+      "pod_count": 18,
+      "ready": true,
+      "requested_cpu_millis": 540,
+      "requested_memory_mib": 2136,
+      "schedulable": true
+    },
+    "peer_nodes": [
+      {
+        "allocatable_cpu_millis": 18000,
+        "allocatable_memory_mib": 7665,
+        "name": "healops-worker2",
+        "pod_count": 0,
+        "ready": true,
+        "requested_cpu_millis": 2430,
+        "requested_memory_mib": 2482,
+        "schedulable": true
+      },
+      {
+        "allocatable_cpu_millis": 18000,
+        "allocatable_memory_mib": 7665,
+        "name": "healops-worker3",
+        "pod_count": 0,
+        "ready": true,
+        "requested_cpu_millis": 2410,
+        "requested_memory_mib": 2354,
+        "schedulable": true
+      }
+    ],
+    "pods": [
+      "chaos/chaos-state-0",
+      "chaos/hands-off-api-5bfbf46c-57v4j",
+      "chaos/hands-off-api-5bfbf46c-jh5dr",
+      "chaos/lonely-api-9d8dfd97b-4whgm",
+      "chaos/restart-on-resize-59975fc5cb-vcpqf",
+      "healops/healops-dashboard-7b7b6fdf4f-jgtbp",
+      "healops/healops-engine-855dd58dbf-lm8vg",
+      "healops/healops-postgres-6587697f68-np2gb",
+      "healops/healops-s3-6f6c578f7-vrrmv",
+      "healops/healops-valkey-866877bd47-pdxvl",
+      "healops/healops-watchdog-29853012-jpcdd",
+      "monitoring/alertmanager-kps-alertmanager-0",
+      "monitoring/alertmanager-kps-alertmanager-1",
+      "monitoring/alertmanager-kps-alertmanager-2",
+      "monitoring/kps-grafana-64bf798588-dv9n5",
+      "monitoring/kps-kube-state-metrics-568d55549-2zrnv",
+      "monitoring/kps-operator-68d978b84c-bhpnv",
+      "monitoring/prometheus-kps-prometheus-0"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 0,
+    "replicas": 1,
+    "revision": null,
+    "server_supports_in_place_resize": true,
+    "template_digest": null
+  }
+}

@@ -1,0 +1,11 @@
+incident   : chaos/Deployment/cpu-burner  HighPodCPU  2026-10-05T04:47:28.870234+00:00
+correlation: cause=HighPodCPU (new_incident); 2 alert(s), 1 symptom(s) attached as evidence
+plan       : scale chaos/cpu-burner from 2 to 4 replicas (ceiling 10, expires in 2h)
+             (reversible, ephemeral ttl=2h, blast radius: 2 pods / 0 nodes / internal, confidence 0.93)
+replanned  : MATCH  recorded input reproduces the plan, digest 2a1e379f46e9
+policy     : allow  [no rule fired]
+execute    : ok  scaled to 4 replicas  in 0.0s
+verify     : REMEDIATED  alert cleared, signals within thresholds, no new alerts on the target
+outcome    : remediated
+ledger     : 7 entries, chain VALID, root 533f81018193
+bundle     : sha256 9c268ad7c3251a0b3050dc8aa005a04de7f53f8d265959fdda32df93f35ae290

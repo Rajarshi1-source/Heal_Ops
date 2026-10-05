@@ -19,21 +19,28 @@ from cache.redis_client import get_client
 from config import get_settings
 
 
-def dedup_key(fingerprint: str) -> str:
-    return f"dedup:{fingerprint}"
+def dedup_key(fingerprint: str, incident_id: int | str | None = None) -> str:
+    return f"dedup:{fingerprint}" if incident_id is None else f"dedup:{fingerprint}:{incident_id}"
 
 
 def idempotency_key(fingerprint: str, runbook: str, incident_id: int | str) -> str:
     return f"idem:{fingerprint}:{runbook}:{incident_id}"
 
 
-async def seen_recently(fingerprint: str, ttl_seconds: int | None = None) -> bool:
+async def seen_recently(
+    fingerprint: str, ttl_seconds: int | None = None, *, incident_id: int | str | None = None
+) -> bool:
     """True if this exact alert was already accepted inside the dedup window.
 
     Sets the key when absent, so the first caller wins and the rest are told to stand down.
+
+    Scoped to the incident when one is given. A state-based alert flaps -- CrashLoopBackOff
+    disappears for the seconds the container runs -- so the same fingerprint fires, resolves and
+    fires again, and the second firing rightly opens a NEW incident once the first has closed.
+    Deduplicated on the fingerprint alone, that incident got no plan job and stayed open forever.
     """
     ttl = ttl_seconds or get_settings().dedup_ttl_seconds
-    first = await get_client().set(dedup_key(fingerprint), "1", nx=True, ex=ttl)
+    first = await get_client().set(dedup_key(fingerprint, incident_id), "1", nx=True, ex=ttl)
     return not first
 
 

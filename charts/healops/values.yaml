@@ -1,0 +1,148 @@
+# HealOps chart values. Every image is pinned -- CI sets the tags to the git SHA it pushed; nothing
+# here is ever `latest`. Install with:
+#
+#   helm upgrade --install healops charts/healops -n healops --create-namespace \
+#     -f charts/healops/values-local.yaml --rollback-on-failure --wait
+#
+# `--rollback-on-failure` (Helm 4's name for `--atomic`) makes a bad release roll itself back.
+# With Helm 4, `--wait` needs the `watch` verb in the deploying identity's role (see
+# k8s/rbac/ci-deployer.yaml).
+
+engine:
+  image:
+    repository: ghcr.io/rajarshi1-source/healops-engine
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  # Two replicas serve webhooks; a Lease elects the one that acts. Webhook availability and
+  # execution authority are separate requirements.
+  replicas: 2
+  environment: prod
+  # Public read-only tier: refuses every write path regardless of policy, and runs no worker.
+  readOnly: false
+  workerEnabled: true
+  logLevel: info
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+  # On SIGTERM the engine stops consuming, finishes in-flight work and releases the Lease.
+  terminationGracePeriodSeconds: 60
+  nodeSelector: {}
+  tolerations: []
+
+# Where the engine reads signals. Defaults match kube-prometheus-stack with fullnameOverride: kps.
+observability:
+  prometheusUrl: http://kps-prometheus.monitoring.svc:9090
+  alertmanagerUrl: http://kps-alertmanager.monitoring.svc:9093
+  serviceMonitor:
+    enabled: true
+    # The label kube-prometheus-stack's Prometheus selects ServiceMonitors by.
+    labels: { release: kps }
+
+# Datastores. Point these at managed services in production. `existingSecret` lets a real
+# deployment keep credentials out of values files entirely; it must carry the keys rendered by
+# templates/config.yaml.
+existingSecret: ""
+database:
+  host: postgres.example.internal
+  port: 5432
+  name: healops
+  # The engine connects as the least-privilege role: INSERT and SELECT on the ledger, no more.
+  appUser: healops_app
+  appPassword: ""
+  # Migrations run as the owner, from the hook Job only.
+  ownerUser: postgres
+  ownerPassword: ""
+redis:
+  url: redis://valkey.example.internal:6379/0
+s3:
+  endpoint: ""
+  bucket: healops-archives
+  accessKeyId: ""
+  secretAccessKey: ""
+  region: us-east-1
+
+secrets:
+  # Must match the token Alertmanager presents (charts/alerting-rules webhookSecret.token).
+  webhookSharedSecret: ""
+  slackBotToken: ""
+  slackSigningSecret: ""
+  # Fine-grained PAT: contents + pull requests + issues on ONE repository.
+  githubToken: ""
+  # Bearer token for POST /api/approvals. Empty: Slack is the only approval path.
+  approvalsApiToken: ""
+
+slack:
+  channel: "#healops-incidents"
+github:
+  repo: ""
+  baseBranch: main
+
+# The policy file ships inside the engine image, so it is versioned and fingerprinted with the code
+# it gates: a policy change is a new image, and resets promoted runbooks to approval.
+policy:
+  file: policy/remediation.yaml
+
+# Runbook 2 runs on the node under pressure, as a short-lived Job (see engine/src/node_agent.py).
+nodeAgent:
+  enabled: true
+  # The only host directories it may read or delete under.
+  archiveRoots: ["/var/log"]
+  timeoutSeconds: 120
+
+# GitOps-aware remediation: permission to pause Argo CD / Flux reconciliation for one mitigation
+# window. Off by default -- turn on only where a controller actually manages the workloads.
+gitops:
+  argocd:
+    enabled: false
+    namespace: argocd
+  flux:
+    enabled: false
+
+rbac:
+  # The remediation verbs. The public read-only tier sets this false: an engine that cannot act
+  # needs no permission to act.
+  create: true
+
+watchdog:
+  enabled: true
+  # Every minute. A compensation owned by the process that can crash is not a compensation.
+  schedule: "* * * * *"
+  deadlineSeconds: 900
+
+ledgerPartitions:
+  enabled: true
+  # A missing partition is an insert failure, and no ledger write means no action. Create the next
+  # month's partition well before it is needed.
+  schedule: "0 3 * * *"
+
+dashboard:
+  enabled: true
+  image:
+    repository: ghcr.io/rajarshi1-source/healops-dashboard
+    # Built read-only by default (NEXT_PUBLIC_READ_ONLY is inlined at build time).
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  nodeSelector: {}
+  service:
+    type: ClusterIP
+    nodePort: null
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+# Local and test clusters only: single-replica datastores with no persistence. Never in production.
+devDatastores:
+  enabled: false
+  nodeSelector: {}
+  postgres:
+    image: "postgres:18.6-alpine"
+    password: healops-dev
+    # Off by default so `helm template` needs no storage class; the kind values turn it on.
+    persistence: { enabled: false, size: 1Gi }
+  valkey: { image: "valkey/valkey:9.1-alpine" }
+  # S3-compatible archive store. SeaweedFS: MinIO no longer publishes community images to pin.
+  s3:
+    image: "chrislusf/seaweedfs:4.48"
+    accessKey: healops
+    secretKey: healops-dev-secret

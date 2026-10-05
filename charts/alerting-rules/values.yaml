@@ -20,9 +20,10 @@ thresholds:
   oomWindow: 10m
   nodeNotReadyFor: 3m
 
-# The shared secret Alertmanager presents on the webhook. Override in a values file that is not
-# committed, or let the HealOps chart create the secret and set `create: false` here.
+# The shared secret Alertmanager presents on the webhook. Off by default: Alertmanager mounts it,
+# so it has to exist before kube-prometheus-stack installs -- `make observability` creates it
+# first. Two owners of one Secret would also conflict under Helm 4's server-side apply.
 webhookSecret:
-  create: true
+  create: false
   name: healops-webhook
   token: "change-me"

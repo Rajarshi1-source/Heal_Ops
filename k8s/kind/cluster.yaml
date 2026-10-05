@@ -2,7 +2,8 @@
 #
 # Three workers is not arbitrary: runbook 5 (cordon + drain) needs somewhere to drain TO, and its
 # capacity precheck refuses when remaining allocatable is under 120% of drained requests. With a
-# single worker that runbook could only ever refuse, so the chaos test would prove nothing.
+# single worker that runbook could only ever refuse, so the chaos test would prove nothing. One of
+# the three is the platform pool, which is never a fault target (see below).
 #
 # 1.35+ requires cgroup v2, which is also what makes the OOM and PSI signals trustworthy.
 kind: Cluster
@@ -31,9 +32,14 @@ nodes:
         hostPort: 9093
         protocol: TCP
 
+  # The platform pool: HealOps' own state and the observability stack. The chaos suite drains
+  # nodes and stops kubelets, and it only ever does so in the general pool -- a drain that took
+  # the ledger's database or the only Prometheus with it would prove nothing about the runbook.
   - role: worker
     labels:
-      healops.io/pool: general
+      healops.io/pool: platform
+  # The general pool, where the chaos app runs and node faults land. Two, so a drain of one has
+  # somewhere to go besides the platform node.
   - role: worker
     labels:
       healops.io/pool: general

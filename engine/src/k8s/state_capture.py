@@ -14,6 +14,8 @@ Two consumers with different needs:
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import replace
 from typing import Any
 
@@ -22,7 +24,7 @@ from kubernetes.client.rest import ApiException
 
 from bundle import AutoscalerState, ContainerState, GitOpsManager, NodeState, Target
 from k8s import deployment_ops
-from k8s.client import call, core_v1, server_version
+from k8s.client import apps_v1, call, core_v1, serialise, server_version
 
 log = structlog.get_logger(__name__)
 
@@ -90,6 +92,34 @@ def _container_snapshot(container: Any) -> dict[str, Any]:
     }
 
 
+RESTARTED_AT = "kubectl.kubernetes.io/restartedAt"
+
+
+def template_digest(template: Any) -> str:
+    """A digest of the whole pod template, so a change outside image and resources still shows.
+
+    A rollback that only removes an env var looks like a no-op in a snapshot of images and limits;
+    the digest is what tells "rolled back" from "patched and changed nothing". A digest rather than
+    the template itself, because env values can be secrets and this snapshot goes into the ledger
+    and the evidence bundle. The ReplicaSet's hash label and the restart stamp are dropped: neither
+    is anything a person declared.
+    """
+    data = serialise(template) or {}
+    metadata = data.get("metadata") or {}
+    (metadata.get("labels") or {}).pop(deployment_ops.POD_TEMPLATE_HASH, None)
+    # `kubectl rollout restart` stamps this; a restart is not a declared change, so rolling one back
+    # restores nothing.
+    (metadata.get("annotations") or {}).pop(RESTARTED_AT, None)
+    # ...and a dict emptied by those pops must read the same as one that was never there: a
+    # restarted revision left `annotations: {}` where the original had no key, the digests differed,
+    # and a rollback of a restart was planned as a fix. Found on kind, by the refusal fixtures.
+    for key in ("labels", "annotations"):
+        if key in metadata and not metadata[key]:
+            del metadata[key]
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 async def capture_deployment(namespace: str, name: str) -> dict[str, Any]:
     """Snapshot the fields a remediation can change.
 
@@ -106,6 +136,7 @@ async def capture_deployment(namespace: str, name: str) -> dict[str, Any]:
         "replicas": spec.replicas,
         "revision": (deployment.metadata.annotations or {}).get(deployment_ops.REVISION_ANNOTATION),
         "containers": [_container_snapshot(c) for c in spec.template.spec.containers],
+        "template_digest": template_digest(spec.template),
         "annotations": {
             k: v
             for k, v in (deployment.metadata.annotations or {}).items()
@@ -180,20 +211,10 @@ def classify_gitops(labels: dict[str, str], annotations: dict[str, str]) -> GitO
     return classify(labels, annotations)
 
 
-async def build_target_for_deployment(
-    namespace: str, name: str, *, node: str | None = None
-) -> Target:
-    """Every cluster read the planner needs, done once, before planning.
-
-    This is what keeps `plan()` a pure function of the bundle -- and therefore what makes the
-    decision eval hermetic and the determinism digest stable.
-    """
-    deployment = await deployment_ops.read_deployment(namespace, name)
-    spec = deployment.spec
-    metadata = deployment.metadata
-    labels = dict(metadata.labels or {})
-    annotations = dict(metadata.annotations or {})
-
+async def _pods_and_containers(
+    namespace: str, spec: Any
+) -> tuple[tuple[str, ...], tuple[ContainerState, ...]]:
+    """The workload's pods and its containers' declared resources, for any pod-owning controller."""
     pods = await call(
         "list_pods",
         core_v1().list_namespaced_pod,
@@ -233,6 +254,52 @@ async def build_target_for_deployment(
         )
         for c in spec.template.spec.containers
     )
+    return pod_names, containers
+
+
+async def build_target_for_statefulset(namespace: str, name: str) -> Target:
+    """A StatefulSet, captured so that it can be REFUSED on the record.
+
+    No runbook acts on one and policy denies them outright, but an alert on a stateful workload
+    must reach that decision -- "denied: StatefulSet" is an audited outcome, "not found" is a shrug.
+    """
+    stateful = await call(
+        "get_statefulset", apps_v1().read_namespaced_stateful_set, name, namespace
+    )
+    spec, metadata = stateful.spec, stateful.metadata
+    pod_names, containers = await _pods_and_containers(namespace, spec)
+    labels = dict(metadata.labels or {})
+    annotations = dict(metadata.annotations or {})
+    return Target(
+        kind="StatefulSet",
+        name=name,
+        namespace=namespace,
+        labels=labels,
+        annotations=annotations,
+        replicas=spec.replicas or 0,
+        ready_replicas=(stateful.status.ready_replicas if stateful.status else 0) or 0,
+        containers=containers,
+        pods=pod_names,
+        gitops_manager=classify_gitops(labels, annotations),
+        server_supports_in_place_resize=(await server_version()).supports_in_place_resize,
+    )
+
+
+async def build_target_for_deployment(
+    namespace: str, name: str, *, node: str | None = None
+) -> Target:
+    """Every cluster read the planner needs, done once, before planning.
+
+    This is what keeps `plan()` a pure function of the bundle -- and therefore what makes the
+    decision eval hermetic and the determinism digest stable.
+    """
+    deployment = await deployment_ops.read_deployment(namespace, name)
+    spec = deployment.spec
+    metadata = deployment.metadata
+    labels = dict(metadata.labels or {})
+    annotations = dict(metadata.annotations or {})
+
+    pod_names, containers = await _pods_and_containers(namespace, spec)
 
     autoscaler: AutoscalerState | None = None
     try:
@@ -273,6 +340,8 @@ async def build_target_for_deployment(
         revision=current,
         previous_revision=prior.revision if prior else None,
         previous_image=prior.images[0] if prior and prior.images else None,
+        template_digest=template_digest(revisions[0].template) if revisions else None,
+        previous_template_digest=template_digest(prior.template) if prior else None,
         server_supports_in_place_resize=version.supports_in_place_resize,
     )
 
@@ -298,6 +367,7 @@ async def build_target_for_node(name: str) -> Target:
     pods = await call("list_pods", core_v1().list_pod_for_all_namespaces)
     requested: dict[str, tuple[int, int]] = {}
     drainable: list[str] = []
+    moved_workloads: set[str] = set()
     for pod in pods.items:
         node_name = pod.spec.node_name
         if not node_name or not _occupies_node(pod):
@@ -307,6 +377,8 @@ async def build_target_for_node(name: str) -> Target:
         requested[node_name] = (prior_cpu + cpu, prior_memory + memory)
         if node_name == name and _moves_on_drain(pod):
             drainable.append(f"{pod.metadata.namespace}/{pod.metadata.name}")
+            if owner := _workload_of(pod):
+                moved_workloads.add(owner)
 
     def with_requests(state: NodeState) -> NodeState:
         cpu, memory = requested.get(state.name, (0, 0))
@@ -329,6 +401,7 @@ async def build_target_for_node(name: str) -> Target:
         annotations=dict(node.metadata.annotations or {}),
         node=name,
         pods=tuple(sorted(drainable)),
+        drained_workloads=tuple(sorted(moved_workloads)),
         node_state=replace(
             state,
             requested_cpu_millis=moved_cpu,
@@ -342,6 +415,21 @@ async def build_target_for_node(name: str) -> Target:
             and "node-role.kubernetes.io/control-plane" not in (n.metadata.labels or {})
         ),
     )
+
+
+def _workload_of(pod: Any) -> str | None:
+    """`namespace/Kind/name` of the controller a pod belongs to, for the ones a drain judges.
+
+    A Deployment's pods are owned by a ReplicaSet named `<deployment>-<pod-template-hash>`, so the
+    Deployment is the name without its last segment -- the convention the controller guarantees,
+    and one fewer API read per pod. Bare pods and Jobs have no replicas to come back to.
+    """
+    for owner in pod.metadata.owner_references or []:
+        if owner.kind == "ReplicaSet" and "-" in owner.name:
+            return f"{pod.metadata.namespace}/Deployment/{owner.name.rsplit('-', 1)[0]}"
+        if owner.kind == "StatefulSet":
+            return f"{pod.metadata.namespace}/StatefulSet/{owner.name}"
+    return None
 
 
 def _occupies_node(pod: Any) -> bool:

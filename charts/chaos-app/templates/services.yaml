@@ -16,3 +16,22 @@ spec:
       targetPort: http
 {{- end }}
 {{- end }}
+---
+# Headless, for cpu-load: it balances across the burner pods itself, evenly, instead of letting
+# kube-proxy pick at random per connection -- random picks bunch requests into bursts, and a burst
+# inside one 100ms CFS period is throttling a fixed fault never asked for.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cpu-burner-headless
+  labels:
+    {{- include "chaos.labels" (dict "name" "cpu-burner" "root" $) | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app: cpu-burner
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+

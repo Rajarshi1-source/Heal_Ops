@@ -1,0 +1,103 @@
+{
+  "cause_alert": {
+    "alertname": "NodeDiskPressure",
+    "annotations": {
+      "healops_archive_candidates": "[{\"age_days\": 8.95, \"path\": \"/var/log/chaos/archived-003.log\", \"size_bytes\": 7077888}, {\"age_days\": 11.58, \"path\": \"/var/log/chaos/archived-004.log\", \"size_bytes\": 7077888}, {\"age_days\": 14.22, \"path\": \"/var/log/chaos/archived-005.log\", \"size_bytes\": 7077888}, {\"age_days\": 16.86, \"path\": \"/var/log/chaos/archived-006.log\", \"size_bytes\": 7077888}, {\"age_days\": 19.49, \"path\": \"/var/log/chaos/archived-007.log\", \"size_bytes\": 7077888}, {\"age_days\": 22.13, \"path\": \"/var/log/chaos/archived-008.log\", \"size_bytes\": 7077888}, {\"age_days\": 24.77, \"path\": \"/var/log/chaos/archived-009.log\", \"size_bytes\": 7077888}, {\"age_days\": 27.4, \"path\": \"/var/log/chaos/archived-010.log\", \"size_bytes\": 7077888}, {\"age_days\": 30.04, \"path\": \"/var/log/chaos/archived-011.log\", \"size_bytes\": 7077888}]",
+      "summary": "chaos suite: disk pressure on healops-worker3"
+    },
+    "container": null,
+    "fingerprint": "3d2f719e10b640ec",
+    "labels": {
+      "alertname": "NodeDiskPressure",
+      "healops_runbook": "disk_cleanup",
+      "node": "healops-worker3",
+      "severity": "warning"
+    },
+    "namespace": null,
+    "node": "healops-worker3",
+    "pod": null,
+    "severity": "warning",
+    "starts_at": "2026-10-05T05:32:01.526368+00:00",
+    "status": "firing"
+  },
+  "cause_scope": "node",
+  "correlation_reason": "new_incident",
+  "expected_effect": "require_approval",
+  "expected_runbook": "disk_cleanup",
+  "format_version": 1,
+  "incident_id": "e2e-disk-old-logs",
+  "label_note": "Archive-then-delete on a node: node-scoped and only partially reversible, so a human approves. (The alert was delivered by the suite; kind cannot fill a real disk.) [captured end to end: incident #24, evidence acbf9f6efc1d]",
+  "opened_at": "2026-10-05T05:32:01.541475+00:00",
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "node.alpha.kubernetes.io/ttl": "0",
+      "volumes.kubernetes.io/controller-managed-attach-detach": "true"
+    },
+    "autoscaler": null,
+    "containers": [],
+    "drained_workloads": [
+      "chaos/Deployment/cpu-burner",
+      "chaos/Deployment/crashy-api",
+      "chaos/Deployment/log-spammer"
+    ],
+    "gitops_manager": "unmanaged",
+    "kind": "Node",
+    "labels": {
+      "beta.kubernetes.io/arch": "amd64",
+      "beta.kubernetes.io/os": "linux",
+      "healops.io/pool": "general",
+      "kubernetes.io/arch": "amd64",
+      "kubernetes.io/hostname": "healops-worker3",
+      "kubernetes.io/os": "linux"
+    },
+    "name": "healops-worker3",
+    "namespace": null,
+    "node": "healops-worker3",
+    "node_state": {
+      "allocatable_cpu_millis": 18000,
+      "allocatable_memory_mib": 7665,
+      "name": "healops-worker3",
+      "pod_count": 3,
+      "ready": true,
+      "requested_cpu_millis": 90,
+      "requested_memory_mib": 96,
+      "schedulable": true
+    },
+    "peer_nodes": [
+      {
+        "allocatable_cpu_millis": 18000,
+        "allocatable_memory_mib": 7665,
+        "name": "healops-worker",
+        "pod_count": 0,
+        "ready": true,
+        "requested_cpu_millis": 640,
+        "requested_memory_mib": 2186,
+        "schedulable": true
+      },
+      {
+        "allocatable_cpu_millis": 18000,
+        "allocatable_memory_mib": 7665,
+        "name": "healops-worker2",
+        "pod_count": 0,
+        "ready": true,
+        "requested_cpu_millis": 210,
+        "requested_memory_mib": 274,
+        "schedulable": true
+      }
+    ],
+    "pods": [
+      "chaos/cpu-burner-5879f48bb8-fmlmf",
+      "chaos/crashy-api-6775f995fc-b2r6w",
+      "chaos/log-spammer-74647d66c7-x2nk6"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 0,
+    "replicas": 1,
+    "revision": null,
+    "server_supports_in_place_resize": true,
+    "template_digest": null
+  }
+}

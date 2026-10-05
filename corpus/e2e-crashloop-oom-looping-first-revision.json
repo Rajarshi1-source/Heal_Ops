@@ -1,0 +1,85 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodCrashLooping",
+    "annotations": {
+      "description": "Container hungry in chaos/restart-on-resize-64b669d975-88r74 on node healops-worker has been in CrashLoopBackOff for 2m.",
+      "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+      "summary": "Pod chaos/restart-on-resize-64b669d975-88r74 is crash looping"
+    },
+    "container": "hungry",
+    "fingerprint": "1c893d850f62da72",
+    "labels": {
+      "alertname": "KubePodCrashLooping",
+      "container": "hungry",
+      "healops_runbook": "crashloop_rollback",
+      "namespace": "chaos",
+      "node": "healops-worker",
+      "pod": "restart-on-resize-64b669d975-88r74",
+      "prometheus": "monitoring/kps-prometheus",
+      "severity": "critical"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker",
+    "pod": "restart-on-resize-64b669d975-88r74",
+    "severity": "critical",
+    "starts_at": "2026-10-05T04:50:13.996000+00:00",
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "new_incident",
+  "expected_effect": "refuse",
+  "expected_runbook": "crashloop_rollback",
+  "format_version": 1,
+  "incident_id": "e2e-crashloop-oom-looping-first-revision",
+  "label_note": "Crash-looping because it OOMs, on its only revision: a rollback has nowhere to go. [captured end to end: incident #3, evidence 028dee05a379]",
+  "opened_at": "2026-10-05T04:50:58.851445+00:00",
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "1",
+      "meta.helm.sh/release-name": "chaos",
+      "meta.helm.sh/release-namespace": "chaos"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": 100,
+        "cpu_request_millis": 10,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 256,
+        "memory_peak_mib": null,
+        "memory_request_mib": 128,
+        "memory_resize_policy": "RestartContainer",
+        "name": "hungry",
+        "restart_count": 6
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {
+      "app": "restart-on-resize",
+      "app.kubernetes.io/managed-by": "Helm",
+      "app.kubernetes.io/name": "restart-on-resize",
+      "app.kubernetes.io/part-of": "chaos-app",
+      "healops.io/expected-decision": "refuse"
+    },
+    "name": "restart-on-resize",
+    "namespace": "chaos",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "restart-on-resize-64b669d975-88r74"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 0,
+    "replicas": 1,
+    "revision": 1,
+    "server_supports_in_place_resize": true,
+    "template_digest": "b84f5c71d3917eda66c2bf17b421023836477edc3e39b9728c6884cee901570d"
+  }
+}

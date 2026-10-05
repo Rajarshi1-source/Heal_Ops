@@ -27,6 +27,7 @@ from datetime import timedelta
 from typing import Any, Literal, assert_never
 
 import structlog
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import breaker
@@ -98,10 +99,18 @@ async def handle(
     The caller owns the transaction, so every ledger append here lands in the same commit as the
     state change it records.
     """
+    # The planner's whole input goes on the record. Planning is a pure function of it, so an
+    # auditor holding the evidence bundle can re-run the decision offline and prove it reproduces --
+    # and a real chaos-run incident becomes a decision-eval corpus case without a second capture.
     await ledger.append(
         session,
         "plan_requested",
-        {"runbook": runbook.name, "target": target.key, "alertname": bundle.cause_alert.alertname},
+        {
+            "runbook": runbook.name,
+            "target": target.key,
+            "alertname": bundle.cause_alert.alertname,
+            "input": bundle.to_dict(),
+        },
         incident_id=incident.id,
     )
     incident.state = assert_transition(incident.id, incident.state, IncidentState.PLANNING).value
@@ -298,7 +307,7 @@ async def execute_approved(
         ):
             # Re-checked here, not only at the gate: an approval can sit for ten minutes, and the
             # breaker may have tripped or the budget run out since the plan was made.
-            await _admit(session, plan, plan_id)
+            await _admit(session, plan, plan_id, execution_id=execution.id)
 
             # Persisted BEFORE the action. This is the saga's compensating transaction, and it is
             # already durable by the time anything changes in the cluster.
@@ -410,10 +419,22 @@ async def execute_approved(
     )
 
 
-async def _admit(session: AsyncSession, plan: RemediationPlan, plan_id: str) -> None:
+async def _admit(
+    session: AsyncSession, plan: RemediationPlan, plan_id: str, *, execution_id: int | None = None
+) -> None:
     allowed, why = await breaker.admit(session, plan_id)
     if not allowed:
         raise NotAdmitted(why)
+    in_flight = await _in_flight_on_target(session, plan, execution_id)
+    if in_flight is not None:
+        # One change in flight per target. The per-resource lock covers only the API calls; the
+        # change it made is still being judged for minutes after. A second plan made in that window
+        # was made against a target mid-fix -- found on kind, where it rolled a Deployment the
+        # first plan had just repaired back onto the broken revision.
+        raise NotAdmitted(
+            f"execution {in_flight} on {plan.target_kind} {plan.target_name} is still being "
+            "verified; one remediation in flight per target -- escalating instead"
+        )
     exhausted = await budget.has_room(session, plan.target_namespace)
     if exhausted is not None:
         raise NotAdmitted(
@@ -423,6 +444,29 @@ async def _admit(session: AsyncSession, plan: RemediationPlan, plan_id: str) -> 
 
 
 # --- helpers -------------------------------------------------------------------------------------
+
+
+async def _in_flight_on_target(
+    session: AsyncSession, plan: RemediationPlan, execution_id: int | None
+) -> int | None:
+    """Another execution on this exact target whose change is applied and not yet judged."""
+    row = await session.execute(
+        select(RunbookExecution.id)
+        .join(RemediationPlanRow, RemediationPlanRow.id == RunbookExecution.plan_id)
+        .where(
+            RunbookExecution.status == "awaiting_verification",
+            RunbookExecution.compensated.is_(False),
+            RunbookExecution.id != (execution_id or -1),
+            RemediationPlanRow.target_kind == plan.target_kind,
+            RemediationPlanRow.target_name == plan.target_name,
+            RemediationPlanRow.target_namespace.is_(None)
+            if plan.target_namespace is None
+            else RemediationPlanRow.target_namespace == plan.target_namespace,
+        )
+        .limit(1)
+    )
+    found: int | None = row.scalar_one_or_none()
+    return found
 
 
 def _target_view(target: Target) -> TargetView:

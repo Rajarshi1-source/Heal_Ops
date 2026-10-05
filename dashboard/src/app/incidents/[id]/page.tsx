@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { engine } from "@/lib/engine";
 import { duration, shortHash, timestamp } from "@/lib/format";
 import { OUTCOMES } from "@/lib/outcomes";
-import type { Alert, ApiCall, Execution, IncidentDetail, LedgerEntry, Plan, Verification } from "@/lib/types";
+import type { Alert, ApiCall, Evidence, Execution, IncidentDetail, LedgerEntry, Plan, Verification } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +33,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function IncidentPage({ params }: Props) {
   const { id } = await params;
-  const result = await load(id);
+  const [result, evidence] = await Promise.all([
+    load(id),
+    engine<Evidence>(`/api/incidents/${encodeURIComponent(id)}/evidence`),
+  ]);
   if (result.status === 404) notFound();
   if (!result.data) return <ErrorState error={result.error ?? "unknown"} />;
   const incident = result.data;
@@ -56,6 +59,7 @@ export default async function IncidentPage({ params }: Props) {
         <Freshness fetchedAt={result.fetchedAt} />
       </header>
 
+      {evidence.data && <Replay evidence={evidence.data} />}
       <Alerts alerts={incident.alerts} reason={incident.correlation_reason} />
       {incident.plans.map((plan) => (
         <PlanCard key={plan.id} plan={plan} />
@@ -73,6 +77,36 @@ export default async function IncidentPage({ params }: Props) {
 }
 
 // --- sections -----------------------------------------------------------------------------------
+
+/**
+ * The offline reconstruction, exactly as the CLI prints it. A `<pre>` and nothing else: the format
+ * is a golden file, so restyling a line here would make the page disagree with the record.
+ */
+function Replay({ evidence }: { evidence: Evidence }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Replay</CardTitle>
+        <CardDescription>
+          The whole incident from its evidence bundle alone — no cluster, no database. Run it yourself with{" "}
+          <code className="font-mono">healopsctl replay {shortHash(evidence.sha256)}</code>; the output is
+          byte-identical.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <pre
+          aria-label="healopsctl replay output"
+          className="overflow-x-auto rounded bg-background/60 p-3 font-mono text-[0.72rem] leading-relaxed text-foreground"
+        >
+          {evidence.replay}
+        </pre>
+        <p className="text-xs text-subtle">
+          Evidence bundle <code className="break-all font-mono text-muted">sha256:{evidence.sha256}</code>
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
 
 function Alerts({ alerts, reason }: { alerts: Alert[]; reason: string }) {
   const causes = alerts.filter((a) => a.role === "cause");

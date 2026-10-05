@@ -1,0 +1,672 @@
+{
+  "alert_count": 3,
+  "alerts": [
+    {
+      "alertname": "KubePodCrashLooping",
+      "fingerprint": "e22b5048865bc75d",
+      "id": 84,
+      "namespace": "chaos",
+      "node": "healops-worker2",
+      "pod": "crashy-api-654bd5946f-5s84j",
+      "received_at": "2026-10-05T05:24:43.600419+00:00",
+      "role": "cause",
+      "severity": "critical",
+      "starts_at": "2026-10-05T05:24:28.996000+00:00",
+      "status": "firing"
+    },
+    {
+      "alertname": "KubePodCrashLooping",
+      "fingerprint": "2ce5e569783567f5",
+      "id": 89,
+      "namespace": "chaos",
+      "node": "healops-worker2",
+      "pod": "crashy-api-654bd5946f-wjfvk",
+      "received_at": "2026-10-05T05:24:43.600419+00:00",
+      "role": "symptom",
+      "severity": "critical",
+      "starts_at": "2026-10-05T05:23:58.996000+00:00",
+      "status": "firing"
+    },
+    {
+      "alertname": "KubePodCrashLooping",
+      "fingerprint": "2580904f4e78c0a5",
+      "id": 90,
+      "namespace": "chaos",
+      "node": "healops-worker3",
+      "pod": "crashy-api-654bd5946f-z6sqk",
+      "received_at": "2026-10-05T05:24:58.603757+00:00",
+      "role": "symptom",
+      "severity": "critical",
+      "starts_at": "2026-10-05T05:24:13.996000+00:00",
+      "status": "firing"
+    }
+  ],
+  "approvals": [],
+  "cause_alertname": "KubePodCrashLooping",
+  "cause_scope": "workload",
+  "closed_at": null,
+  "correlation_reason": "new_incident",
+  "executions": [
+    {
+      "compensated": false,
+      "detail": "rolled back to revision 5",
+      "durability": "ephemeral",
+      "expires_at": "2026-10-05T07:24:43.746532+00:00",
+      "finished_at": "2026-10-05T05:24:44.053006+00:00",
+      "gitops_managed": false,
+      "gitops_paused": false,
+      "id": 2,
+      "mode": "auto",
+      "plan_id": "01a10a85-80a3-7176-ada8-2f1bc26ceb59",
+      "pr_url": null,
+      "runbook": "crashloop_rollback",
+      "signals_before": {
+        "alert_firing": true,
+        "custom": {
+          "restarts": 1.0528015048042842
+        },
+        "memory_usage_ratio": null,
+        "new_alerts": [
+          "KubePodCrashLooping"
+        ],
+        "oom_events": 0.0,
+        "pending_alerts": [
+          "CPUThrottlingHigh",
+          "KubePodNotReady"
+        ],
+        "psi_full": 0.0,
+        "restarts": 1,
+        "throttle_ratio": 0.0
+      },
+      "started_at": "2026-10-05T05:24:43.987236+00:00",
+      "state_after": {
+        "annotations": {
+          "deployment.kubernetes.io/revision": "6",
+          "healops.io/chaos-fixture": "crashy-api",
+          "meta.helm.sh/release-name": "chaos",
+          "meta.helm.sh/release-namespace": "chaos"
+        },
+        "containers": [
+          {
+            "cpu_limit": "100m",
+            "cpu_request": "20m",
+            "cpu_resize_policy": null,
+            "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+            "memory_limit": "64Mi",
+            "memory_request": "32Mi",
+            "memory_resize_policy": null,
+            "name": "crashy-api"
+          }
+        ],
+        "kind": "Deployment",
+        "name": "crashy-api",
+        "namespace": "chaos",
+        "replicas": 3,
+        "revision": "6",
+        "template_digest": "273fb8658610479b464e95d399ce5febc665c0845ba42a8e40ea90ca81832b98"
+      },
+      "state_before": {
+        "annotations": {
+          "deployment.kubernetes.io/revision": "6",
+          "healops.io/chaos-fixture": "crashy-api",
+          "meta.helm.sh/release-name": "chaos",
+          "meta.helm.sh/release-namespace": "chaos"
+        },
+        "containers": [
+          {
+            "cpu_limit": "100m",
+            "cpu_request": "20m",
+            "cpu_resize_policy": null,
+            "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+            "memory_limit": "64Mi",
+            "memory_request": "32Mi",
+            "memory_resize_policy": null,
+            "name": "crashy-api"
+          }
+        ],
+        "kind": "Deployment",
+        "name": "crashy-api",
+        "namespace": "chaos",
+        "replicas": 3,
+        "revision": "6",
+        "template_digest": "169d38a47071218698896b1680650a383061977ea1485dc914c4c29503f35572"
+      },
+      "status": "remediated"
+    }
+  ],
+  "format_version": 1,
+  "id": 19,
+  "ledger": [
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "aa24ede3c0585d3f1b7883e3ce590296b94ac8134c00357562011bad5447e301",
+      "incident_id": 19,
+      "occurred_at": "2026-10-05T05:24:43.600419+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "correlation_reason": "new_incident",
+        "created_incident": true,
+        "fingerprint": "e22b5048865bc75d",
+        "role": "cause",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/crashy-api"
+      },
+      "prev_hash": "de9f8b9ced3b018037303544393b194d1c738ebaeabde0a28cd5432a795e83cc",
+      "seq": 66
+    },
+    {
+      "actor": "healops",
+      "event_type": "state_transition",
+      "execution_id": null,
+      "hash": "40b70e5863ad91b5e1fd963b51c36ef643f646ff4b39d44a141deacdf2d794b3",
+      "incident_id": 19,
+      "occurred_at": "2026-10-05T05:24:43.600419+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "correlation_reason": "symptom_of_workload_cause",
+        "created_incident": false,
+        "fingerprint": "2ce5e569783567f5",
+        "role": "symptom",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/crashy-api"
+      },
+      "prev_hash": "aa24ede3c0585d3f1b7883e3ce590296b94ac8134c00357562011bad5447e301",
+      "seq": 67
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "d3e7a48cc26c9950afb38551ea2e52d81b80f00a3bcd8120513e03ec8f309e91",
+      "incident_id": 19,
+      "occurred_at": "2026-10-05T05:24:43.746532+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "input": {
+          "cause_alert": {
+            "alertname": "KubePodCrashLooping",
+            "annotations": {
+              "description": "Container crashy-api in chaos/crashy-api-654bd5946f-5s84j on node healops-worker2 has been in CrashLoopBackOff for 2m.",
+              "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+              "summary": "Pod chaos/crashy-api-654bd5946f-5s84j is crash looping"
+            },
+            "container": "crashy-api",
+            "fingerprint": "e22b5048865bc75d",
+            "labels": {
+              "alertname": "KubePodCrashLooping",
+              "container": "crashy-api",
+              "healops_runbook": "crashloop_rollback",
+              "namespace": "chaos",
+              "node": "healops-worker2",
+              "pod": "crashy-api-654bd5946f-5s84j",
+              "prometheus": "monitoring/kps-prometheus",
+              "severity": "critical"
+            },
+            "namespace": "chaos",
+            "node": "healops-worker2",
+            "pod": "crashy-api-654bd5946f-5s84j",
+            "severity": "critical",
+            "starts_at": "2026-10-05T05:24:28.996000+00:00",
+            "status": "firing"
+          },
+          "cause_scope": "workload",
+          "correlation_reason": "new_incident",
+          "expected_effect": null,
+          "expected_runbook": null,
+          "format_version": 1,
+          "incident_id": "19",
+          "label_note": null,
+          "opened_at": "2026-10-05T05:24:43.600419+00:00",
+          "symptom_alerts": [
+            {
+              "alertname": "KubePodCrashLooping",
+              "annotations": {
+                "description": "Container crashy-api in chaos/crashy-api-654bd5946f-wjfvk on node healops-worker2 has been in CrashLoopBackOff for 2m.",
+                "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+                "summary": "Pod chaos/crashy-api-654bd5946f-wjfvk is crash looping"
+              },
+              "container": "crashy-api",
+              "fingerprint": "2ce5e569783567f5",
+              "labels": {
+                "alertname": "KubePodCrashLooping",
+                "container": "crashy-api",
+                "healops_runbook": "crashloop_rollback",
+                "namespace": "chaos",
+                "node": "healops-worker2",
+                "pod": "crashy-api-654bd5946f-wjfvk",
+                "prometheus": "monitoring/kps-prometheus",
+                "severity": "critical"
+              },
+              "namespace": "chaos",
+              "node": "healops-worker2",
+              "pod": "crashy-api-654bd5946f-wjfvk",
+              "severity": "critical",
+              "starts_at": "2026-10-05T05:23:58.996000+00:00",
+              "status": "firing"
+            }
+          ],
+          "target": {
+            "annotations": {
+              "deployment.kubernetes.io/revision": "6",
+              "healops.io/chaos-fixture": "crashy-api",
+              "meta.helm.sh/release-name": "chaos",
+              "meta.helm.sh/release-namespace": "chaos"
+            },
+            "autoscaler": null,
+            "containers": [
+              {
+                "cpu_limit_millis": 100,
+                "cpu_request_millis": 20,
+                "cpu_resize_policy": null,
+                "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+                "memory_limit_mib": 64,
+                "memory_peak_mib": null,
+                "memory_request_mib": 32,
+                "memory_resize_policy": null,
+                "name": "crashy-api",
+                "restart_count": 6
+              }
+            ],
+            "drained_workloads": [],
+            "gitops_manager": "unmanaged",
+            "kind": "Deployment",
+            "labels": {
+              "app": "crashy-api",
+              "app.kubernetes.io/managed-by": "Helm",
+              "app.kubernetes.io/name": "crashy-api",
+              "app.kubernetes.io/part-of": "chaos-app"
+            },
+            "name": "crashy-api",
+            "namespace": "chaos",
+            "node": null,
+            "node_state": null,
+            "peer_nodes": [],
+            "pods": [
+              "crashy-api-654bd5946f-5s84j",
+              "crashy-api-654bd5946f-wjfvk",
+              "crashy-api-654bd5946f-z6sqk"
+            ],
+            "previous_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+            "previous_revision": 5,
+            "previous_template_digest": "273fb8658610479b464e95d399ce5febc665c0845ba42a8e40ea90ca81832b98",
+            "ready_replicas": 0,
+            "replicas": 3,
+            "revision": 6,
+            "server_supports_in_place_resize": true,
+            "template_digest": "169d38a47071218698896b1680650a383061977ea1485dc914c4c29503f35572"
+          }
+        },
+        "runbook": "crashloop_rollback",
+        "target": "chaos/Deployment/crashy-api"
+      },
+      "prev_hash": "40b70e5863ad91b5e1fd963b51c36ef643f646ff4b39d44a141deacdf2d794b3",
+      "seq": 68
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan",
+      "execution_id": null,
+      "hash": "784567053fd009bf58f42d7b39419a2a02fe490d15d8c87dea2af20d867ec32f",
+      "incident_id": 19,
+      "occurred_at": "2026-10-05T05:24:43.746532+00:00",
+      "payload": {
+        "actions": [
+          {
+            "body": {
+              "from_revision": 6,
+              "from_template": "169d38a47071218698896b1680650a383061977ea1485dc914c4c29503f35572",
+              "to_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+              "to_revision": 5,
+              "to_template": "273fb8658610479b464e95d399ce5febc665c0845ba42a8e40ea90ca81832b98"
+            },
+            "name": "crashy-api",
+            "namespace": "chaos",
+            "resource": "apps/v1/Deployment",
+            "subresource": null,
+            "verb": "rollout_undo"
+          }
+        ],
+        "blast_radius": {
+          "namespaces": [
+            "chaos"
+          ],
+          "nodes": 0,
+          "pods": 3,
+          "user_facing": false
+        },
+        "blast_radius_score": 3,
+        "compensation": [
+          {
+            "body": {
+              "from_revision": 5,
+              "from_template": "273fb8658610479b464e95d399ce5febc665c0845ba42a8e40ea90ca81832b98",
+              "to_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+              "to_revision": 6,
+              "to_template": "169d38a47071218698896b1680650a383061977ea1485dc914c4c29503f35572"
+            },
+            "name": "crashy-api",
+            "namespace": "chaos",
+            "resource": "apps/v1/Deployment",
+            "subresource": null,
+            "verb": "rollout_undo"
+          }
+        ],
+        "confidence": 0.95,
+        "cost_delta_inr_month": 0.0,
+        "durability": "ephemeral",
+        "expected_signal": {
+          "alert_should_clear": "KubePodCrashLooping",
+          "queries": {
+            "restarts": "max by (namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=\"chaos\",pod=~\"crashy-api-.*\"}[$WINDOW]))"
+          },
+          "thresholds": {
+            "restarts": 0.0
+          },
+          "window_seconds": 300
+        },
+        "gitops_managed": false,
+        "incident_id": "19",
+        "plan_id": "",
+        "planner_version": "0",
+        "refusal_reason": null,
+        "reversibility": "reversible",
+        "runbook": "crashloop_rollback",
+        "summary": "roll back chaos/crashy-api from revision 6 to 5",
+        "target_kind": "Deployment",
+        "target_name": "crashy-api",
+        "target_namespace": "chaos",
+        "ttl_seconds": 7200
+      },
+      "prev_hash": "d3e7a48cc26c9950afb38551ea2e52d81b80f00a3bcd8120513e03ec8f309e91",
+      "seq": 69
+    },
+    {
+      "actor": "healops",
+      "event_type": "policy",
+      "execution_id": null,
+      "hash": "1f4bed7246c0f0fc13f2c0947786741a2dfee7e04c7b490b6007930246273ce4",
+      "incident_id": 19,
+      "occurred_at": "2026-10-05T05:24:43.746532+00:00",
+      "payload": {
+        "decision": "allow",
+        "messages": [],
+        "reasons": []
+      },
+      "prev_hash": "784567053fd009bf58f42d7b39419a2a02fe490d15d8c87dea2af20d867ec32f",
+      "seq": 70
+    },
+    {
+      "actor": "healops",
+      "event_type": "execute",
+      "execution_id": 2,
+      "hash": "f5ac82a233b4a3076bd8f08ff39995e02bc2c3f1fe1921bc31ee6e525b7cf9d1",
+      "incident_id": 19,
+      "occurred_at": "2026-10-05T05:24:43.746532+00:00",
+      "payload": {
+        "detail": "rolled back to revision 5",
+        "ok": true,
+        "plan_id": "01a10a85-80a3-7176-ada8-2f1bc26ceb59",
+        "state_after": {
+          "annotations": {
+            "deployment.kubernetes.io/revision": "6",
+            "healops.io/chaos-fixture": "crashy-api",
+            "meta.helm.sh/release-name": "chaos",
+            "meta.helm.sh/release-namespace": "chaos"
+          },
+          "containers": [
+            {
+              "cpu_limit": "100m",
+              "cpu_request": "20m",
+              "cpu_resize_policy": null,
+              "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+              "memory_limit": "64Mi",
+              "memory_request": "32Mi",
+              "memory_resize_policy": null,
+              "name": "crashy-api"
+            }
+          ],
+          "kind": "Deployment",
+          "name": "crashy-api",
+          "namespace": "chaos",
+          "replicas": 3,
+          "revision": "6",
+          "template_digest": "273fb8658610479b464e95d399ce5febc665c0845ba42a8e40ea90ca81832b98"
+        },
+        "state_before": {
+          "annotations": {
+            "deployment.kubernetes.io/revision": "6",
+            "healops.io/chaos-fixture": "crashy-api",
+            "meta.helm.sh/release-name": "chaos",
+            "meta.helm.sh/release-namespace": "chaos"
+          },
+          "containers": [
+            {
+              "cpu_limit": "100m",
+              "cpu_request": "20m",
+              "cpu_resize_policy": null,
+              "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+              "memory_limit": "64Mi",
+              "memory_request": "32Mi",
+              "memory_resize_policy": null,
+              "name": "crashy-api"
+            }
+          ],
+          "kind": "Deployment",
+          "name": "crashy-api",
+          "namespace": "chaos",
+          "replicas": 3,
+          "revision": "6",
+          "template_digest": "169d38a47071218698896b1680650a383061977ea1485dc914c4c29503f35572"
+        }
+      },
+      "prev_hash": "1f4bed7246c0f0fc13f2c0947786741a2dfee7e04c7b490b6007930246273ce4",
+      "seq": 71
+    },
+    {
+      "actor": "healops",
+      "event_type": "state_transition",
+      "execution_id": null,
+      "hash": "79674c3e3967a06ac6f03804715f2055840352df6111b408d313f1b2419cc232",
+      "incident_id": 19,
+      "occurred_at": "2026-10-05T05:24:58.603757+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "correlation_reason": "symptom_of_workload_cause",
+        "created_incident": false,
+        "fingerprint": "2580904f4e78c0a5",
+        "role": "symptom",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/crashy-api"
+      },
+      "prev_hash": "f5ac82a233b4a3076bd8f08ff39995e02bc2c3f1fe1921bc31ee6e525b7cf9d1",
+      "seq": 72
+    },
+    {
+      "actor": "healops",
+      "event_type": "verify",
+      "execution_id": 2,
+      "hash": "313c6372c7cb25cca428dbcf8dfef2c44457622c6d891fcbba8dcbe739380604",
+      "incident_id": 19,
+      "occurred_at": "2026-10-05T05:29:52.706763+00:00",
+      "payload": {
+        "alert_cleared": true,
+        "new_alerts": [],
+        "outcome": "remediated",
+        "reasons": [
+          "alert cleared, signals within thresholds, no new alerts on the target"
+        ],
+        "signals_after": {
+          "custom:restarts": 0.0,
+          "memory_usage_ratio": 0.26495361328125,
+          "oom_events": 0.0,
+          "psi_full": 0.00026313836914600554,
+          "restarts": 0.0,
+          "throttle_ratio": 0.0
+        },
+        "signals_before": {
+          "custom:restarts": 1.0528015048042842,
+          "memory_usage_ratio": null,
+          "oom_events": 0.0,
+          "psi_full": 0.0,
+          "restarts": 1.0,
+          "throttle_ratio": 0.0
+        }
+      },
+      "prev_hash": "9b62e5a7a6c47bb5fcf8f1a02b03546dbe52e00bb523e15a512b21cd6b9f2541",
+      "seq": 82
+    }
+  ],
+  "mode": "auto",
+  "namespace": "chaos",
+  "opened_at": "2026-10-05T05:24:43.600419+00:00",
+  "outcome": "remediated",
+  "outcome_detail": "remediated",
+  "plans": [
+    {
+      "actions": [
+        {
+          "body": {
+            "from_revision": 6,
+            "from_template": "169d38a47071218698896b1680650a383061977ea1485dc914c4c29503f35572",
+            "to_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+            "to_revision": 5,
+            "to_template": "273fb8658610479b464e95d399ce5febc665c0845ba42a8e40ea90ca81832b98"
+          },
+          "name": "crashy-api",
+          "namespace": "chaos",
+          "resource": "apps/v1/Deployment",
+          "subresource": null,
+          "verb": "rollout_undo"
+        }
+      ],
+      "blast_radius": {
+        "namespaces": [
+          "chaos"
+        ],
+        "nodes": 0,
+        "pods": 3,
+        "score": 3,
+        "user_facing": false
+      },
+      "compensation": [
+        {
+          "body": {
+            "from_revision": 5,
+            "from_template": "273fb8658610479b464e95d399ce5febc665c0845ba42a8e40ea90ca81832b98",
+            "to_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+            "to_revision": 6,
+            "to_template": "169d38a47071218698896b1680650a383061977ea1485dc914c4c29503f35572"
+          },
+          "name": "crashy-api",
+          "namespace": "chaos",
+          "resource": "apps/v1/Deployment",
+          "subresource": null,
+          "verb": "rollout_undo"
+        }
+      ],
+      "confidence": 0.95,
+      "cost_delta_inr_month": 0.0,
+      "created_at": "2026-10-05T05:24:43.746532+00:00",
+      "durability": "ephemeral",
+      "expected_signal": {
+        "alert_should_clear": "KubePodCrashLooping",
+        "queries": {
+          "restarts": "max by (namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=\"chaos\",pod=~\"crashy-api-.*\"}[$WINDOW]))"
+        },
+        "thresholds": {
+          "restarts": 0.0
+        },
+        "window_seconds": 300
+      },
+      "id": "01a10a85-80a3-7176-ada8-2f1bc26ceb59",
+      "planner_version": "1.0.0",
+      "policy_decision": "allow",
+      "policy_reasons": [],
+      "refusal_reason": null,
+      "reversibility": "reversible",
+      "runbook": "crashloop_rollback",
+      "summary": "roll back chaos/crashy-api from revision 6 to 5",
+      "target_key": "chaos/Deployment/crashy-api",
+      "ttl_seconds": 7200
+    }
+  ],
+  "runbook": "crashloop_rollback",
+  "state": "remediated",
+  "summary": "roll back chaos/crashy-api from revision 6 to 5",
+  "target_key": "chaos/Deployment/crashy-api",
+  "trail": [
+    {
+      "detail": "new_incident",
+      "label": "3 alert(s)",
+      "stage": "correlate",
+      "state": "passed"
+    },
+    {
+      "detail": "roll back chaos/crashy-api from revision 6 to 5",
+      "label": "crashloop_rollback",
+      "stage": "plan",
+      "state": "passed"
+    },
+    {
+      "detail": "",
+      "label": "allowed",
+      "stage": "policy",
+      "state": "passed"
+    },
+    {
+      "detail": "within policy, no human needed",
+      "label": "auto",
+      "stage": "gate",
+      "state": "passed"
+    },
+    {
+      "detail": "rolled back to revision 5",
+      "label": "applied",
+      "stage": "execute",
+      "state": "passed"
+    },
+    {
+      "detail": "alert cleared, signals within thresholds, no new alerts on the target",
+      "label": "remediated",
+      "stage": "verify",
+      "state": "passed"
+    },
+    {
+      "detail": "",
+      "label": "remediated",
+      "stage": "outcome",
+      "state": "passed"
+    }
+  ],
+  "verifications": [
+    {
+      "alert_cleared": true,
+      "checked_at": "2026-10-05T05:29:52.706763+00:00",
+      "compensated": false,
+      "execution_id": 2,
+      "outcome": "remediated",
+      "reasons": [
+        "alert cleared, signals within thresholds, no new alerts on the target"
+      ],
+      "signals_after": {
+        "custom:restarts": 0.0,
+        "memory_usage_ratio": 0.26495361328125,
+        "oom_events": 0.0,
+        "psi_full": 0.00026313836914600554,
+        "restarts": 0.0,
+        "throttle_ratio": 0.0
+      },
+      "signals_before": {
+        "custom:restarts": 1.0528015048042842,
+        "memory_usage_ratio": null,
+        "oom_events": 0.0,
+        "psi_full": 0.0,
+        "restarts": 1.0,
+        "throttle_ratio": 0.0
+      },
+      "window_seconds": 300
+    }
+  ]
+}

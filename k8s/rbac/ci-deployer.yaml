@@ -1,0 +1,78 @@
+# The identity CI deploys HealOps with. Separate from the engine's own ClusterRole: deploying
+# HealOps and being HealOps are different authorities.
+#
+# Helm 4 note that breaks CI silently if missed: `helm upgrade --wait` (and `--rollback-on-failure`,
+# which implies it) now WATCHES resources until they are ready, so every resource the chart creates needs
+# the `watch` verb here, not just get/list.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: healops-ci-deployer
+  namespace: healops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: healops-ci-deployer
+  namespace: healops
+rules:
+  - apiGroups: ["", "apps", "batch", "policy", "monitoring.coreos.com"]
+    resources:
+      - deployments
+      - services
+      - configmaps
+      - secrets
+      - serviceaccounts
+      - jobs
+      - cronjobs
+      - poddisruptionbudgets
+      - servicemonitors
+      - pods
+      - pods/log
+      - events
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "bind", "escalate"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: healops-ci-deployer
+  namespace: healops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: healops-ci-deployer
+subjects:
+  - kind: ServiceAccount
+    name: healops-ci-deployer
+    namespace: healops
+---
+# The engine's ClusterRole and binding are cluster-scoped, so installing them needs a cluster-scoped
+# grant -- limited to exactly those two named objects.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: healops-ci-deployer
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles", "clusterrolebindings"]
+    resourceNames: ["healops-engine"]
+    verbs: ["get", "list", "watch", "update", "patch", "delete", "bind", "escalate"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles", "clusterrolebindings"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: healops-ci-deployer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: healops-ci-deployer
+subjects:
+  - kind: ServiceAccount
+    name: healops-ci-deployer
+    namespace: healops

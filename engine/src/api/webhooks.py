@@ -94,7 +94,7 @@ async def receive_alertmanager(
     for item in ingested:
         if not item.is_cause:
             continue
-        if await dedup_store.seen_recently(item.fingerprint):
+        if await dedup_store.seen_recently(item.fingerprint, incident_id=item.incident_id):
             deduplicated += 1
             metrics.alerts_deduplicated.inc()
             continue

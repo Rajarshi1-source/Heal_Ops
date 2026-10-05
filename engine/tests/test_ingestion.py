@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.alert_parser import AlertmanagerV2Payload
@@ -299,3 +299,79 @@ async def test_chain_stays_valid_across_a_whole_batch(db_session: AsyncSession) 
     status = await ledger.verify_chain(db_session)
     assert status.valid is True, status.detail
     assert status.entries >= 4
+
+
+async def test_concurrent_batches_correlate_one_after_the_other() -> None:
+    """Regression, found on the kind cluster: one Deployment's pods on two nodes arrive as two
+    Alertmanager groups, 0.3ms apart. Correlated concurrently, neither batch saw the other's new
+    incident -- two incidents, two rollbacks of one Deployment. The second batch must wait.
+
+    Two real connections, both rolled back: nothing is committed to the test database.
+    """
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from tests.conftest import TEST_DATABASE_URL, _unreachable
+
+    if "postgres" in _unreachable:
+        pytest.skip(_unreachable["postgres"])
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=None)
+    try:
+        async with engine.connect() as probe:
+            await probe.execute(select(1))
+    except Exception as exc:  # noqa: BLE001
+        await engine.dispose()
+        pytest.skip(f"PostgreSQL not reachable: {exc}")
+
+    maker = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+    first_batch = synthetic(
+        [
+            firing(
+                "KubePodCrashLooping",
+                "fp-node-a",
+                namespace="shop",
+                pod="api-7d9f8b6c5d-aaaaa",
+                node="worker-1",
+            )
+        ]
+    )
+    second_batch = synthetic(
+        [
+            firing(
+                "KubePodCrashLooping",
+                "fp-node-b",
+                namespace="shop",
+                pod="api-7d9f8b6c5d-bbbbb",
+                node="worker-2",
+            )
+        ]
+    )
+
+    async with engine.connect() as c1, engine.connect() as c2:
+        t1, t2 = await c1.begin(), await c2.begin()
+        s1, s2 = maker(bind=c1), maker(bind=c2)
+        try:
+            await ingest_payload(s1, first_batch)  # holds the correlation lock until t1 ends
+            second = asyncio.create_task(ingest_payload(s2, second_batch))
+            await asyncio.sleep(0.5)
+            assert not second.done(), "the second batch correlated while the first was undecided"
+            # And it waits at the CORRELATION lock -- before reading open incidents. The ledger's
+            # own lock would also make it wait, but only after it had already correlated: the race.
+            async with engine.connect() as observer:
+                waiting = await observer.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"
+                        " AND objid::bigint"
+                        " = (hashtext('healops_correlation')::bigint & 4294967295)"
+                    )
+                )
+            assert waiting == 1
+            await t1.rollback()
+            await asyncio.wait_for(second, timeout=10)
+        finally:
+            await s1.close()
+            await s2.close()
+            if t2.is_active:
+                await t2.rollback()
+    await engine.dispose()

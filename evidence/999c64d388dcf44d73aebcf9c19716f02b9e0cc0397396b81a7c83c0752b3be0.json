@@ -1,0 +1,241 @@
+{
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alertname": "KubePodCrashLooping",
+      "fingerprint": "04b954c625032ba3",
+      "id": 78,
+      "namespace": "chaos",
+      "node": "healops-worker",
+      "pod": "chaos-state-0",
+      "received_at": "2026-10-05T05:22:58.613878+00:00",
+      "role": "cause",
+      "severity": "critical",
+      "starts_at": "2026-10-05T05:21:58.996000+00:00",
+      "status": "firing"
+    }
+  ],
+  "approvals": [],
+  "cause_alertname": "KubePodCrashLooping",
+  "cause_scope": "workload",
+  "closed_at": null,
+  "correlation_reason": "new_incident",
+  "executions": [],
+  "format_version": 1,
+  "id": 16,
+  "ledger": [
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "8560702b98bdb326415199358db1d12d64bbd0018fb11e3eec7d4bfaf9b6d072",
+      "incident_id": 16,
+      "occurred_at": "2026-10-05T05:22:58.613878+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "correlation_reason": "new_incident",
+        "created_incident": true,
+        "fingerprint": "04b954c625032ba3",
+        "role": "cause",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/chaos-state"
+      },
+      "prev_hash": "aef73b56a18839b9fe06815f6f8c85200911988fa3e6ae6fc68dd7682f6f9698",
+      "seq": 56
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "8ae4fbedebf360bcd08353770e093a4bc99cb9b0754cdf4d5e045ad2bf2047f4",
+      "incident_id": 16,
+      "occurred_at": "2026-10-05T05:22:58.698422+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "input": {
+          "cause_alert": {
+            "alertname": "KubePodCrashLooping",
+            "annotations": {
+              "description": "Container crashy in chaos/chaos-state-0 on node healops-worker has been in CrashLoopBackOff for 2m.",
+              "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+              "summary": "Pod chaos/chaos-state-0 is crash looping"
+            },
+            "container": "crashy",
+            "fingerprint": "04b954c625032ba3",
+            "labels": {
+              "alertname": "KubePodCrashLooping",
+              "container": "crashy",
+              "healops_runbook": "crashloop_rollback",
+              "namespace": "chaos",
+              "node": "healops-worker",
+              "pod": "chaos-state-0",
+              "prometheus": "monitoring/kps-prometheus",
+              "severity": "critical"
+            },
+            "namespace": "chaos",
+            "node": "healops-worker",
+            "pod": "chaos-state-0",
+            "severity": "critical",
+            "starts_at": "2026-10-05T05:21:58.996000+00:00",
+            "status": "firing"
+          },
+          "cause_scope": "workload",
+          "correlation_reason": "new_incident",
+          "expected_effect": null,
+          "expected_runbook": null,
+          "format_version": 1,
+          "incident_id": "16",
+          "label_note": null,
+          "opened_at": "2026-10-05T05:22:58.613878+00:00",
+          "symptom_alerts": [],
+          "target": {
+            "annotations": {
+              "meta.helm.sh/release-name": "chaos",
+              "meta.helm.sh/release-namespace": "chaos"
+            },
+            "autoscaler": null,
+            "containers": [
+              {
+                "cpu_limit_millis": 50,
+                "cpu_request_millis": 10,
+                "cpu_resize_policy": null,
+                "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+                "memory_limit_mib": 64,
+                "memory_peak_mib": null,
+                "memory_request_mib": 32,
+                "memory_resize_policy": null,
+                "name": "crashy",
+                "restart_count": 8
+              }
+            ],
+            "drained_workloads": [],
+            "gitops_manager": "unmanaged",
+            "kind": "StatefulSet",
+            "labels": {
+              "app": "chaos-state",
+              "app.kubernetes.io/managed-by": "Helm",
+              "app.kubernetes.io/name": "chaos-state",
+              "app.kubernetes.io/part-of": "chaos-app",
+              "healops.io/expected-decision": "deny"
+            },
+            "name": "chaos-state",
+            "namespace": "chaos",
+            "node": null,
+            "node_state": null,
+            "peer_nodes": [],
+            "pods": [
+              "chaos-state-0"
+            ],
+            "previous_image": null,
+            "previous_revision": null,
+            "previous_template_digest": null,
+            "ready_replicas": 0,
+            "replicas": 1,
+            "revision": null,
+            "server_supports_in_place_resize": true,
+            "template_digest": null
+          }
+        },
+        "runbook": "crashloop_rollback",
+        "target": "chaos/StatefulSet/chaos-state"
+      },
+      "prev_hash": "aa1f2d620420a18672b3e06cf064b4862a20bcf1fbf3e6f553ccd7a4d998076e",
+      "seq": 60
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan",
+      "execution_id": null,
+      "hash": "87330d75905a916d5ce779fe2868f3d7c6a1ce74929d04c228d35e496954abbf",
+      "incident_id": 16,
+      "occurred_at": "2026-10-05T05:22:58.698422+00:00",
+      "payload": {
+        "actions": [],
+        "blast_radius": {
+          "namespaces": [],
+          "nodes": 0,
+          "pods": 0,
+          "user_facing": false
+        },
+        "blast_radius_score": 0,
+        "compensation": [],
+        "confidence": 1.0,
+        "cost_delta_inr_month": 0.0,
+        "durability": "ephemeral",
+        "expected_signal": null,
+        "gitops_managed": false,
+        "incident_id": "16",
+        "plan_id": "",
+        "planner_version": "0",
+        "refusal_reason": "StatefulSet is not rollable by this runbook; only Deployments carry the ReplicaSet revision history a rollback needs",
+        "reversibility": "reversible",
+        "runbook": "crashloop_rollback",
+        "summary": "REFUSED: StatefulSet is not rollable by this runbook; only Deployments carry the ReplicaSet revision history a rollback needs",
+        "target_kind": "StatefulSet",
+        "target_name": "chaos-state",
+        "target_namespace": "chaos",
+        "ttl_seconds": 0
+      },
+      "prev_hash": "8ae4fbedebf360bcd08353770e093a4bc99cb9b0754cdf4d5e045ad2bf2047f4",
+      "seq": 61
+    }
+  ],
+  "mode": null,
+  "namespace": "chaos",
+  "opened_at": "2026-10-05T05:22:58.613878+00:00",
+  "outcome": "refused",
+  "outcome_detail": "refused",
+  "plans": [
+    {
+      "actions": [],
+      "blast_radius": {
+        "namespaces": [],
+        "nodes": 0,
+        "pods": 0,
+        "score": 0,
+        "user_facing": false
+      },
+      "compensation": [],
+      "confidence": 1.0,
+      "cost_delta_inr_month": 0.0,
+      "created_at": "2026-10-05T05:22:58.698422+00:00",
+      "durability": "ephemeral",
+      "expected_signal": {},
+      "id": "01a10a83-e623-7690-a7b0-8ea0795cee62",
+      "planner_version": "1.0.0",
+      "policy_decision": "deny",
+      "policy_reasons": [],
+      "refusal_reason": "StatefulSet is not rollable by this runbook; only Deployments carry the ReplicaSet revision history a rollback needs",
+      "reversibility": "reversible",
+      "runbook": "crashloop_rollback",
+      "summary": "REFUSED: StatefulSet is not rollable by this runbook; only Deployments carry the ReplicaSet revision history a rollback needs",
+      "target_key": "chaos/StatefulSet/chaos-state",
+      "ttl_seconds": 0
+    }
+  ],
+  "runbook": "crashloop_rollback",
+  "state": "escalated",
+  "summary": "REFUSED: StatefulSet is not rollable by this runbook; only Deployments carry the ReplicaSet revision history a rollback needs",
+  "target_key": "chaos/Deployment/chaos-state",
+  "trail": [
+    {
+      "detail": "new_incident",
+      "label": "1 alert(s)",
+      "stage": "correlate",
+      "state": "passed"
+    },
+    {
+      "detail": "StatefulSet is not rollable by this runbook; only Deployments carry the ReplicaSet revision history a rollback needs",
+      "label": "refused",
+      "stage": "plan",
+      "state": "stopped"
+    },
+    {
+      "detail": "",
+      "label": "refused",
+      "stage": "outcome",
+      "state": "stopped"
+    }
+  ],
+  "verifications": []
+}

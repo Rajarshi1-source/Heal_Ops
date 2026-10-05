@@ -11,7 +11,6 @@ implementation from one that deletes everything.
 from __future__ import annotations
 
 import os
-import random
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +21,7 @@ LOG_DIR = Path(os.environ.get("LOG_DIR", "/var/log/chaos"))
 RATE_MIB_PER_MIN = int(os.environ.get("RATE_MIB_PER_MIN", "64"))
 MAX_TOTAL_MIB = int(os.environ.get("MAX_TOTAL_MIB", "2048"))
 SEED_OLD_FILES = int(os.environ.get("SEED_OLD_FILES", "12"))
+SEED_FILE_MIB = int(os.environ.get("SEED_FILE_MIB", "8"))
 START_DELAY_S = float(os.environ.get("START_DELAY_S", "5"))
 
 _written_mib = 0
@@ -29,14 +29,19 @@ _line = ("chaos log line " + "x" * 200 + "\n").encode()
 
 
 def _seed_backdated_files() -> None:
-    """Write files dated 1-30 days old so the 7-day archive floor has something to discriminate."""
+    """Write files dated 1-30 days old so the 7-day archive floor has something to discriminate.
+
+    Ages are evenly spaced, not random: the chaos tests count how many files the floor admits, and
+    a fixture whose answer changes every pod start makes that count a coin toss.
+    """
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     now = time.time()
     for i in range(SEED_OLD_FILES):
-        age_days = random.uniform(1, 30)  # noqa: S311 - fixture data, not security
+        age_days = 1 + 29 * i / max(SEED_OLD_FILES - 1, 1)
         path = LOG_DIR / f"archived-{i:03d}.log"
         with path.open("wb") as fh:
-            fh.write(_line * 4096)  # ~1 MiB
+            for _ in range(SEED_FILE_MIB):
+                fh.write(_line * 4096)  # ~1 MiB per pass
         mtime = now - age_days * 86400
         os.utime(path, (mtime, mtime))
     print(f"log-spammer: seeded {SEED_OLD_FILES} back-dated files in {LOG_DIR}", flush=True)

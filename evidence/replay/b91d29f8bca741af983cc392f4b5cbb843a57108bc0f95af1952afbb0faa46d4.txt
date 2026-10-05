@@ -1,0 +1,11 @@
+incident   : chaos/Deployment/crashy-api  KubePodCrashLooping  2026-10-05T05:24:43.600419+00:00
+correlation: cause=KubePodCrashLooping (new_incident); 3 alert(s), 2 symptom(s) attached as evidence
+plan       : roll back chaos/crashy-api from revision 6 to 5
+             (reversible, ephemeral ttl=2h, blast radius: 3 pods / 0 nodes / internal, confidence 0.95)
+replanned  : MATCH  recorded input reproduces the plan, digest 2ee749429eff
+policy     : allow  [no rule fired]
+execute    : ok  rolled back to revision 5  in 0.1s
+verify     : REMEDIATED  alert cleared, signals within thresholds, no new alerts on the target
+outcome    : remediated
+ledger     : 8 entries, chain VALID, root 313c6372c7cb
+bundle     : sha256 b91d29f8bca741af983cc392f4b5cbb843a57108bc0f95af1952afbb0faa46d4

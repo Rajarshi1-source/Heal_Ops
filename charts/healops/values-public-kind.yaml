@@ -1,0 +1,22 @@
+# The public tier, rehearsed inside the kind cluster: layered on values-public.yaml by
+# `make public-tier`. Locally built images, and its own throwaway datastores -- seeded from the demo
+# release's recorded incidents, never shared with it. Nothing here can reach the demo engine.
+engine:
+  image:
+    repository: healops-engine
+    tag: "0.1.0"
+    pullPolicy: Never
+  nodeSelector: { healops.io/pool: platform }
+
+devDatastores:
+  enabled: true
+  nodeSelector: { healops.io/pool: platform }
+  postgres:
+    persistence: { enabled: true, size: 1Gi }
+
+dashboard:
+  image:
+    repository: healops-dashboard
+    tag: "0.1.0"
+    pullPolicy: Never
+  nodeSelector: { healops.io/pool: platform }

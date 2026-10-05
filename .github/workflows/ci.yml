@@ -1,0 +1,320 @@
+# HealOps CI: four gates that can fail a merge, then build, sign and deploy.
+#
+# Each gate is its own job so a failure names its own cause: "policy-gate failed" says a guardrail
+# lost its must-deny case, not "CI is red". The fast, hermetic gates (unit, dashboard, charts,
+# decision, policy) need no cluster, so a developer fails cheaply before the chaos job's real kind
+# cluster even starts. `build-sign-deploy` needs every one of them.
+#
+# Every version is pinned: tools by exact version, the kind node by digest, the Prometheus stack by
+# chart version. Nothing here is `latest`.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.14"
+  UV_VERSION: "0.11.6"
+  NODE_VERSION: "24.12.0"
+  HELM_VERSION: "v4.2.4"
+  KIND_VERSION: "v0.32.0"
+  KIND_NODE_IMAGE: "kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed"
+  KPS_CHART_VER: "88.4.0"
+  REGISTRY: ghcr.io/rajarshi1-source
+
+jobs:
+  # --- gate 1: the unit suite ---------------------------------------------------------------------
+  unit:
+    name: unit (lint, types, tests >= 80% coverage)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      # The ledger's append-only grants, uuidv7() and partitioning are server behaviour; the suite
+      # runs them against the real thing rather than a mock of it.
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_DB: healops
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d healops" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+      valkey:
+        image: valkey/valkey:9.1-alpine
+        ports: ["56379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping" --health-interval 5s --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen --all-groups
+      - name: Lint and format
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Types
+        run: uv run mypy engine/src
+      - name: Prepare the test database (app role first, then migrations as the owner)
+        env:
+          PGPASSWORD: postgres
+          HEALOPS_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:55432/healops
+        run: |
+          psql -h localhost -p 55432 -U postgres -d healops -v ON_ERROR_STOP=1 -f engine/sql/init.sql
+          cd engine && uv run alembic upgrade head
+      - name: Unit suite
+        run: uv run pytest -m "not chaos" --cov=engine/src --cov-fail-under=80 --cov-report=term
+
+  # --- gate 1b: the dashboard -------------------------------------------------------------------
+  dashboard:
+    name: dashboard (types, tests, read-only build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      # The default build is the read-only one -- the public tier -- so that is the one CI proves.
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_READ_ONLY: "true"
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  charts:
+    name: charts (helm 4 lint, both tiers)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - run: |
+          helm lint charts/alerting-rules
+          helm lint charts/chaos-app
+          helm lint charts/healops -f charts/healops/values-local.yaml
+          helm lint charts/healops -f charts/healops/values-public.yaml
+          # The public tier must render no Kubernetes permissions at all.
+          if helm template t charts/healops -f charts/healops/values-public.yaml \
+               | grep -E '^kind: (ClusterRole|Role|ClusterRoleBinding|RoleBinding)$'; then
+            echo "the read-only public tier renders RBAC" >&2; exit 1
+          fi
+
+  # --- gate 2: decisions ---------------------------------------------------------------------------
+  decision-gate:
+    name: decision gate (accuracy, calibration, determinism, refusal recall, ledger)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen
+      - name: Decision eval over the committed corpus
+        run: uv run python -m evals.decision_eval --json decision-eval.json
+      - name: Ledger verify over the committed evidence
+        run: uv run python -m evals.ledger_verify
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: decision-eval
+          path: decision-eval.json
+
+  # --- gate 3: the policy file is code, so it is tested ------------------------------------------
+  policy-gate:
+    name: policy gate (every rule has a must-allow and a must-deny)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen
+      - run: uv run python -m evals.policy_eval
+
+  # --- gate 4: real faults on a real cluster -----------------------------------------------------
+  chaos:
+    name: chaos (fix + compensation + refusal, per runbook, on kind)
+    needs: [unit, decision-gate, policy-gate, charts]
+    runs-on: ubuntu-24.04
+    # Every timer in the path is real -- `for:` durations, Alertmanager grouping, the verifier's
+    # windows -- so this is the slow gate, and it runs only once the cheap ones have passed.
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - uses: helm/kind-action@v1.12.0
+        with:
+          version: ${{ env.KIND_VERSION }}
+          node_image: ${{ env.KIND_NODE_IMAGE }}
+          cluster_name: healops
+          config: k8s/kind/cluster.yaml
+          wait: 300s
+      - name: kube-prometheus-stack, pinned
+        run: make observability KPS_CHART_VER=${{ env.KPS_CHART_VER }}
+      - name: Build the images and load them into kind
+        run: make images
+      - name: Alert rules, the chaos app, and HealOps (rollback-on-failure)
+        run: make deploy
+      - name: Chaos suite
+        run: make chaos
+      - name: Cluster dump on failure
+        if: failure()
+        run: |
+          kubectl cluster-info dump --all-namespaces --output-directory=cluster-dump
+          kubectl -n healops logs deploy/healops-engine --tail=2000 > cluster-dump/engine.log || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cluster-dump
+          path: cluster-dump/
+          retention-days: 7
+
+  # --- ship ----------------------------------------------------------------------------------------
+  build-sign-deploy:
+    name: build, sign, attest, deploy
+    needs: [unit, dashboard, charts, decision-gate, policy-gate, chaos]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: demo
+    permissions:
+      contents: read
+      packages: write
+      # Keyless signing: the workflow's OIDC identity is the signer, so there is no key to lose.
+      id-token: write
+    env:
+      DEMO_KUBECONFIG: ${{ secrets.DEMO_KUBECONFIG }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Tagged with the commit, never `latest`: a running image always names the code it came from.
+      - id: engine
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: engine/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/healops-engine:${{ github.sha }}
+      - id: dashboard
+        uses: docker/build-push-action@v6
+        with:
+          context: dashboard
+          push: true
+          # The read-only build: the public tier, and the chart's default.
+          build-args: NEXT_PUBLIC_READ_ONLY=true
+          tags: ${{ env.REGISTRY }}/healops-dashboard:${{ github.sha }}
+      - id: chaos
+        uses: docker/build-push-action@v6
+        with:
+          context: chaos-app
+          push: true
+          tags: ${{ env.REGISTRY }}/healops-chaos:${{ github.sha }}
+      - uses: sigstore/cosign-installer@v3
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen
+      - name: Build the evidence predicate
+        # What this engine build was proven against: the decision-eval report and the address of
+        # every committed evidence bundle. One hash per incident reconstructs it offline.
+        run: |
+          uv run python -m evals.decision_eval --json decision-eval.json
+          uv run python -c "
+          import json, pathlib
+          report = json.loads(pathlib.Path('decision-eval.json').read_text())
+          bundles = sorted(p.stem for p in pathlib.Path('evidence').glob('*.json'))
+          pathlib.Path('evidence-predicate.json').write_text(json.dumps({
+              'commit': '${{ github.sha }}',
+              'decision_eval': {k: report[k] for k in ('accuracy', 'brier', 'ece', 'refusal_recall', 'deterministic', 'passed')},
+              'evidence_bundles': bundles,
+          }, indent=2))
+          "
+      - name: Sign and attest
+        run: |
+          for ref in \
+            "${REGISTRY}/healops-engine@${{ steps.engine.outputs.digest }}" \
+            "${REGISTRY}/healops-dashboard@${{ steps.dashboard.outputs.digest }}" \
+            "${REGISTRY}/healops-chaos@${{ steps.chaos.outputs.digest }}"; do
+            cosign sign --yes "$ref"
+          done
+          cosign attest --yes --predicate evidence-predicate.json \
+            --type https://healops.io/evidence/v1 \
+            "${REGISTRY}/healops-engine@${{ steps.engine.outputs.digest }}"
+      - name: Sign every evidence bundle
+        # Each bundle is already content-addressed; the signature adds WHO vouched for it. Verify
+        # one with: cosign verify-blob --bundle <sha>.sigstore.json --certificate-identity-regexp
+        # 'github.com/Rajarshi1-source/Heal_Ops' --certificate-oidc-issuer
+        # https://token.actions.githubusercontent.com evidence/<sha>.json
+        run: |
+          mkdir -p evidence-signatures
+          for bundle in evidence/*.json; do
+            cosign sign-blob --yes --bundle "evidence-signatures/$(basename "$bundle" .json).sigstore.json" "$bundle"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evidence-signatures
+          path: evidence-signatures/
+      - uses: azure/setup-helm@v4
+        if: env.DEMO_KUBECONFIG != ''
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Deploy both tiers to the demo cluster
+        # Skipped, not failed, until a demo cluster exists: the deploying identity is the narrow
+        # healops-ci-deployer (k8s/rbac/ci-deployer.yaml), never a cluster admin.
+        if: env.DEMO_KUBECONFIG != ''
+        run: |
+          echo "$DEMO_KUBECONFIG" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          # The real engine: in the cluster, behind auth, its secret managed out of band.
+          helm upgrade --install healops charts/healops -n healops --create-namespace \
+            --set existingSecret=healops-engine-secrets \
+            --set engine.image.tag=${{ github.sha }} --set dashboard.image.tag=${{ github.sha }} \
+            --rollback-on-failure --wait --timeout 10m
+          # The public tier: read-only engine, no worker, no Kubernetes permissions at all.
+          helm upgrade --install healops-public charts/healops -n healops-public --create-namespace \
+            -f charts/healops/values-public.yaml \
+            --set engine.image.tag=${{ github.sha }} --set dashboard.image.tag=${{ github.sha }} \
+            --rollback-on-failure --wait --timeout 10m

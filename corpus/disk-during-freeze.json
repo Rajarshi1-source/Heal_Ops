@@ -1,0 +1,115 @@
+{
+  "cause_alert": {
+    "alertname": "NodeDiskPressure",
+    "annotations": {
+      "healops_archive_candidates": "[{\"age_days\": 8.93, \"path\": \"/var/log/chaos/archived-003.log\", \"size_bytes\": 7077888}, {\"age_days\": 11.57, \"path\": \"/var/log/chaos/archived-004.log\", \"size_bytes\": 7077888}, {\"age_days\": 14.2, \"path\": \"/var/log/chaos/archived-005.log\", \"size_bytes\": 7077888}, {\"age_days\": 16.84, \"path\": \"/var/log/chaos/archived-006.log\", \"size_bytes\": 7077888}, {\"age_days\": 19.47, \"path\": \"/var/log/chaos/archived-007.log\", \"size_bytes\": 7077888}, {\"age_days\": 22.11, \"path\": \"/var/log/chaos/archived-008.log\", \"size_bytes\": 7077888}, {\"age_days\": 24.75, \"path\": \"/var/log/chaos/archived-009.log\", \"size_bytes\": 7077888}, {\"age_days\": 27.38, \"path\": \"/var/log/chaos/archived-010.log\", \"size_bytes\": 7077888}, {\"age_days\": 30.02, \"path\": \"/var/log/chaos/archived-011.log\", \"size_bytes\": 7077888}]"
+    },
+    "container": null,
+    "fingerprint": "scenario-disk-during-freeze",
+    "labels": {
+      "alertname": "NodeDiskPressure",
+      "node": "healops-worker3",
+      "severity": "warning"
+    },
+    "namespace": null,
+    "node": "healops-worker3",
+    "pod": null,
+    "severity": "warning",
+    "starts_at": null,
+    "status": "firing"
+  },
+  "cause_scope": "node",
+  "context": {
+    "breaker_state": "open"
+  },
+  "correlation_reason": "captured_by_chaos_harness",
+  "expected_effect": "deny",
+  "expected_runbook": "disk_cleanup",
+  "format_version": 1,
+  "incident_id": "disk-during-freeze",
+  "label_note": "`healopsctl freeze` is in force (breaker open): no action of any kind. [target captured live; alert synthesised]",
+  "opened_at": null,
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "node.alpha.kubernetes.io/ttl": "0",
+      "volumes.kubernetes.io/controller-managed-attach-detach": "true"
+    },
+    "autoscaler": null,
+    "containers": [],
+    "drained_workloads": [
+      "chaos/Deployment/big-api",
+      "chaos/Deployment/cpu-burner",
+      "chaos/Deployment/crashy-api",
+      "chaos/Deployment/log-spammer",
+      "scratch/Deployment/scratch-api"
+    ],
+    "gitops_manager": "unmanaged",
+    "kind": "Node",
+    "labels": {
+      "beta.kubernetes.io/arch": "amd64",
+      "beta.kubernetes.io/os": "linux",
+      "healops.io/pool": "general",
+      "kubernetes.io/arch": "amd64",
+      "kubernetes.io/hostname": "healops-worker3",
+      "kubernetes.io/os": "linux"
+    },
+    "name": "healops-worker3",
+    "namespace": null,
+    "node": "healops-worker3",
+    "node_state": {
+      "allocatable_cpu_millis": 18000,
+      "allocatable_memory_mib": 7665,
+      "name": "healops-worker3",
+      "pod_count": 12,
+      "ready": true,
+      "requested_cpu_millis": 2350,
+      "requested_memory_mib": 2368,
+      "schedulable": true
+    },
+    "peer_nodes": [
+      {
+        "allocatable_cpu_millis": 18000,
+        "allocatable_memory_mib": 7665,
+        "name": "healops-worker",
+        "pod_count": 0,
+        "ready": true,
+        "requested_cpu_millis": 640,
+        "requested_memory_mib": 2186,
+        "schedulable": true
+      },
+      {
+        "allocatable_cpu_millis": 18000,
+        "allocatable_memory_mib": 7665,
+        "name": "healops-worker2",
+        "pod_count": 0,
+        "ready": true,
+        "requested_cpu_millis": 2470,
+        "requested_memory_mib": 2546,
+        "schedulable": true
+      }
+    ],
+    "pods": [
+      "chaos/big-api-6b456d7788-b2mp4",
+      "chaos/big-api-6b456d7788-bpsmn",
+      "chaos/cpu-burner-5879f48bb8-85cb5",
+      "chaos/cpu-burner-5879f48bb8-g8m7r",
+      "chaos/cpu-burner-5879f48bb8-qjrbp",
+      "chaos/cpu-burner-5879f48bb8-tz4tl",
+      "chaos/cpu-burner-5879f48bb8-z9kgw",
+      "chaos/crashy-api-86f4596cc4-pj5mv",
+      "chaos/crashy-api-86f5c9bbd9-rns7c",
+      "chaos/log-spammer-74647d66c7-c5mpz",
+      "scratch/scratch-api-66bc77dc64-k6t9v",
+      "scratch/scratch-api-74cb948877-vxsbk"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 0,
+    "replicas": 1,
+    "revision": null,
+    "server_supports_in_place_resize": true,
+    "template_digest": null
+  }
+}

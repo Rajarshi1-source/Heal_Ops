@@ -62,23 +62,16 @@ def step_2_storm() -> None:
 
 def step_3_oomkill() -> None:
     _banner(3, "OOMKill on hungry-worker", "in-place memory resize; restartCount stays UNCHANGED")
-    _kubectl("-n", CHAOS_NS, "rollout", "restart", "deployment/hungry-worker")
+    # Above the 256Mi limit and below the 384Mi the runbook's bump produces: a fixable OOM.
+    _kubectl("-n", CHAOS_NS, "set", "env", "deployment/hungry-worker", "TARGET_MIB=320", check=True)
     print("watch alongside: kubectl -n chaos get pod -l app=hungry-worker -w", flush=True)
 
 
 def step_4_highcpu() -> None:
     _banner(4, "CPU saturation on cpu-burner", "scale-up within the replica ceiling, TTL'd")
-    _kubectl(
-        "-n",
-        CHAOS_NS,
-        "exec",
-        "deployment/cpu-burner",
-        "--",
-        "python",
-        "-c",
-        "import urllib.request;urllib.request.urlopen(urllib.request.Request("
-        "'http://localhost:8080/burn?seconds=900&workers=4',method='POST'))",
-    )
+    # Load through the Service, not a self-inflicted burn: only CPU that comes from requests is
+    # something more replicas can fix, so only that makes the scale-up a genuine remediation.
+    _kubectl("-n", CHAOS_NS, "scale", "deployment/cpu-load", "--replicas=1", check=True)
 
 
 def step_5_refusal() -> None:
@@ -103,16 +96,8 @@ STEPS = {
 def reset() -> None:
     print("resetting the chaos app to a healthy state", flush=True)
     _kubectl("-n", CHAOS_NS, "set", "env", "deployment/crashy-api", "CRASH_AFTER-")
-    _kubectl(
-        "-n",
-        CHAOS_NS,
-        "exec",
-        "deployment/cpu-burner",
-        "--",
-        "python",
-        "-c",
-        "import urllib.request;urllib.request.urlopen('http://localhost:8080/stop')",
-    )
+    _kubectl("-n", CHAOS_NS, "scale", "deployment/cpu-load", "--replicas=0")
+    _kubectl("-n", CHAOS_NS, "set", "env", "deployment/hungry-worker", "TARGET_MIB=128")
     subprocess.run(  # noqa: S603
         [sys.executable, str(Path(__file__).parent / "flaky_node.py"), "restore", "--wait"],
         check=False,

@@ -17,7 +17,6 @@ honesty is what routes it through the policy gate's approval rule instead of the
 
 from __future__ import annotations
 
-import asyncio
 from typing import TypedDict
 
 import structlog
@@ -145,7 +144,6 @@ class DiskCleanup(Runbook):
             },
         )
 
-        root = f'{{node="{target.name}",mountpoint="/"}}'
         return RemediationPlan(
             runbook=self.name,
             incident_id=bundle.incident_id,
@@ -166,9 +164,8 @@ class DiskCleanup(Runbook):
                 # Scoped to this node: the verifier enforces committed thresholds, and an unscoped
                 # max would let a different full node fail this node's cleanup.
                 queries={
-                    "disk_used_ratio": (
-                        f"max(1 - (node_filesystem_avail_bytes{root}"
-                        f" / node_filesystem_size_bytes{root}))"
+                    "disk_used_ratio": disk_used_query(
+                        target.name, [str(c["path"]) for c in selected]
                     )
                 },
                 thresholds={"disk_used_ratio": 0.80},
@@ -186,124 +183,90 @@ class DiskCleanup(Runbook):
     # --- execute ---------------------------------------------------------------------------------
 
     async def execute(self, plan: RemediationPlan) -> ExecutionResult:
-        """Archive every file and verify it, then delete. Never the other way round."""
-        from pathlib import Path
+        """Archive every file and verify it, then delete. Never the other way round.
 
-        from integrations import s3_client
+        The work happens on the node under pressure, in a node-agent Job -- the engine runs on some
+        other node and cannot see this one's disk. See `node_agent` and `k8s.agent_jobs`.
+        """
+        from k8s import agent_jobs
 
         action = plan.actions[0]
         files: list[Candidate] = list(action.body["files"])
-
         before = {
             "node": plan.target_name,
             "files": [{"path": f["path"], "size_bytes": f["size_bytes"]} for f in files],
             "total_bytes": action.body["total_bytes"],
         }
 
-        if not await s3_client.ensure_bucket():
-            # Refuse at execution time too. The plan was gated when S3 looked reachable; if it is
-            # not reachable now, deleting would be data loss.
-            return ExecutionResult(
-                ok=False,
-                detail=(
-                    "object storage is unreachable, so nothing was deleted -- refusing to trade a "
-                    "disk-pressure incident for data loss"
-                ),
-                state_before=before,
-                state_after=before,
-            )
-
-        archived: list[dict[str, object]] = []
-        freed = 0
-        for entry in files:
-            path = Path(str(entry["path"]))
-            key = _key_for(plan.target_name, str(entry["path"]))
-            try:
-                obj = await s3_client.archive_file(path, key)
-            except s3_client.ArchiveError as exc:
-                # Stop at the first failure. Everything already archived stays archived and its
-                # original is already gone, which is why the result reports partial progress rather
-                # than pretending the whole action failed.
-                return ExecutionResult(
-                    ok=False,
-                    detail=(
-                        f"archived {len(archived)} of {len(files)} files before failing on "
-                        f"{path}: {exc}. No further deletions were attempted."
-                    ),
-                    state_before=before,
-                    state_after={
-                        "node": plan.target_name,
-                        "archived": archived,
-                        "freed_bytes": freed,
-                    },
-                )
-
-            # Only now is deletion safe: the object exists in S3 at the right size. The unlink is
-            # blocking, so it runs in a worker thread rather than on the event loop.
-            try:
-                await asyncio.to_thread(path.unlink)
-            except OSError as exc:
-                log.warning("archived but could not delete", path=str(path), error=str(exc))
-                continue
-
-            archived.append({"path": str(path), "key": obj.key, "size_bytes": obj.size_bytes})
-            freed += obj.size_bytes
-
-        return ExecutionResult(
-            ok=True,
-            detail=f"archived and removed {len(archived)} files, freeing {_human(freed)}",
-            state_before=before,
-            state_after={
+        result = await agent_jobs.run(
+            plan.target_name,
+            {
+                "op": "archive",
                 "node": plan.target_name,
-                "archived": archived,
-                "freed_bytes": freed,
+                "files": files,
+                "roots": get_settings().disk_archive_roots,
             },
+        )
+        after = {
+            "node": plan.target_name,
+            "archived": result.get("archived", []),
+            "freed_bytes": result.get("freed_bytes", 0),
+        }
+        return ExecutionResult(
+            ok=bool(result.get("ok")),
+            detail=str(result.get("detail", "")),
+            state_before=before,
+            # Nothing attempted (archive unreachable, agent unavailable) means nothing changed.
+            state_after=after if result.get("attempted", True) and "archived" in result else before,
         )
 
     # --- compensate ------------------------------------------------------------------------------
 
     async def compensate(self, plan: RemediationPlan) -> ExecutionResult:
-        """Pull the archived files back from S3.
+        """Pull the archived files back from S3, on the node they came from.
 
-        Idempotent: a file already present locally is skipped. This restores the *data*, which is
-        the part that matters; the deletion event itself cannot be unmade, and the plan says so by
-        being classified `partially_reversible`.
+        Idempotent: a file already present is skipped. This restores the *data*, which is the part
+        that matters; the deletion event itself cannot be unmade, and the plan says so by being
+        classified `partially_reversible`.
         """
-        from pathlib import Path
-
-        from integrations import s3_client
+        from k8s import agent_jobs
 
         undo = plan.compensation[0]
         entries: list[dict[str, str]] = list(undo.body["files"])
-
-        before = {"node": plan.target_name, "restoring": len(entries)}
-        restored: list[str] = []
-        missing: list[str] = []
-
-        for entry in entries:
-            path = Path(str(entry["path"]))
-            # Idempotent: a file already back on disk needs no restore. Both the verifier and the
-            # watchdog may call this, so the second call must be a no-op rather than a re-download.
-            if await asyncio.to_thread(path.exists):
-                continue
-            key = str(entry["key"])
-            if not await s3_client.object_exists(key):
-                missing.append(key)
-                continue
-            if await s3_client.restore_file(key, path):
-                restored.append(str(path))
-            else:
-                missing.append(key)
-
-        return ExecutionResult(
-            ok=not missing,
-            detail=(
-                f"restored {len(restored)} files from s3"
-                + (f"; {len(missing)} could not be retrieved" if missing else "")
-            ),
-            state_before=before,
-            state_after={"restored": restored, "missing": missing},
+        result = await agent_jobs.run(
+            plan.target_name,
+            {"op": "restore", "entries": entries, "roots": get_settings().disk_archive_roots},
         )
+        return ExecutionResult(
+            ok=bool(result.get("ok")),
+            detail=str(result.get("detail", "")),
+            state_before={"node": plan.target_name, "restoring": len(entries)},
+            state_after={
+                "restored": result.get("restored", []),
+                "missing": result.get("missing", []),
+            },
+        )
+
+
+def disk_used_query(node: str, paths: list[str]) -> str:
+    """Utilisation of the filesystem the archived files actually lived on.
+
+    Longest mountpoint first, through `or`: each term is a single unlabelled series, so the first
+    filesystem that exists on the node is the one judged -- `/var/log` if it is its own mount,
+    else `/var`, else `/`. Judging `/` alone measured a filesystem a kind node does not even
+    expose, and on a real node with a separate `/var` it would judge the wrong disk entirely.
+    """
+    mounts: set[str] = {"/"}
+    for path in paths:
+        parts = [p for p in path.split("/") if p][:-1]  # the directories above the file
+        mounts.update("/" + "/".join(parts[:i]) for i in range(1, len(parts) + 1))
+    terms = []
+    for mount in sorted(mounts, key=lambda m: (-len(m), m)):
+        sel = f'{{node="{node}",mountpoint="{mount}",fstype!~"tmpfs|overlay|ramfs"}}'
+        terms.append(
+            f"max(1 - (node_filesystem_avail_bytes{sel} / node_filesystem_size_bytes{sel}))"
+        )
+    return " or ".join(terms)
 
 
 def _candidates_from_bundle(bundle: IncidentBundle) -> list[Candidate]:

@@ -114,6 +114,30 @@ def test_recovery_promises_no_alert_and_commits_its_own_checks() -> None:
     # A dead exporter must not read as a drained node.
     assert "vector(0)" not in " ".join(signal.queries.values())
     assert "kube-state-metrics" in signal.queries["pods_left_on_node"]
+    # Evicted pods on a dead kubelet stay Terminating; they are leaving, not left.
+    assert (
+        "unless on (namespace, pod) kube_pod_deletion_timestamp"
+        in (signal.queries["pods_left_on_node"])
+    )
+
+
+def test_recovery_is_judged_on_the_moved_workloads_not_their_namespaces() -> None:
+    """Regression: a namespace-wide check reverted a drain that worked.
+
+    Found by the chaos suite. The chaos namespace holds workloads that crash-loop on purpose, so
+    `unavailable replicas in the moved namespaces` was never zero, whatever the drain did.
+    """
+    moved = ("chaos/Deployment/crashy-api", "chaos/Deployment/cpu-burner", "shop/StatefulSet/db")
+    signal = plan_for(target(ROOMY, drained_workloads=moved)).expected_signal
+    query = signal.queries["unavailable_replicas"]
+
+    assert 'deployment=~"cpu-burner|crashy-api"' in query
+    assert 'namespace="chaos"' in query
+    assert 'statefulset=~"db"' in query
+    assert "namespace=~" not in query  # no namespace-wide reading left
+    # Every term is guarded, so a dead exporter empties the sum instead of zeroing it.
+    assert query.count("kube-state-metrics") == 2
+    assert "vector(0)" not in query
 
 
 def test_an_empty_node_is_only_cordoned() -> None:

@@ -275,6 +275,28 @@ def test_a_pre_existing_alert_is_not_blamed_on_the_action() -> None:
     assert verdict.outcome == "remediated"
 
 
+def test_an_alert_already_pending_before_acting_is_not_blamed_on_the_action() -> None:
+    """Regression, found on the kind cluster: a working scale-out was reverted for
+    CPUThrottlingHigh -- a `for: 15m` alert the CPU fault itself had started, pending when the
+    engine acted and firing mid-window. The condition predates the action; so does the blame."""
+    verdict = judge(
+        plan(),
+        before=healthy(new_alerts=(), pending_alerts=("CPUThrottlingHigh",)),
+        after=healthy(new_alerts=("CPUThrottlingHigh",)),
+    )
+    assert verdict.outcome == "remediated"
+
+
+def test_an_alert_that_starts_pending_only_after_acting_still_counts() -> None:
+    # Pending AFTER the action is no excuse: only what was already under way before is forgiven.
+    verdict = judge(
+        plan(),
+        before=healthy(new_alerts=()),
+        after=healthy(new_alerts=("KubePodOOMKilled",), pending_alerts=("KubePodOOMKilled",)),
+    )
+    assert verdict.outcome == "not_recovered"
+
+
 def test_the_triggering_alert_is_not_counted_as_a_new_alert() -> None:
     # It is the subject of question 1; counting it again here would double-report one problem.
     verdict = judge(

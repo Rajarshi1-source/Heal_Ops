@@ -1,0 +1,185 @@
+{{- if .Values.devDatastores.enabled }}
+# LOCAL AND TEST CLUSTERS ONLY. Single replicas, no persistence, fixed development credentials.
+# Production points `database`, `redis` and `s3` at managed services -- and backs the ledger up
+# harder than anything else here, because losing it loses the compliance story.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: healops-postgres-init
+  labels: {{- include "healops.labels" . | nindent 4 }}
+data:
+  # The least-privilege application role, created before any migration (mirrors engine/sql).
+  01-init.sql: |
+    CREATE ROLE {{ .Values.database.appUser }} WITH LOGIN PASSWORD 'healops';
+    GRANT CONNECT ON DATABASE {{ .Values.database.name }} TO {{ .Values.database.appUser }};
+    GRANT USAGE ON SCHEMA public TO {{ .Values.database.appUser }};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {{ .Values.database.appUser }};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+        GRANT USAGE, SELECT ON SEQUENCES TO {{ .Values.database.appUser }};
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: healops-postgres
+  labels: {{- include "healops.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: {{- include "healops.selector" "postgres" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "healops.labels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres
+    spec:
+      automountServiceAccountToken: false
+      {{- with $.Values.devDatastores.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: postgres
+          image: {{ .Values.devDatastores.postgres.image | quote }}
+          env:
+            - { name: POSTGRES_DB, value: {{ .Values.database.name | quote }} }
+            - { name: POSTGRES_USER, value: {{ .Values.database.ownerUser | quote }} }
+            - { name: POSTGRES_PASSWORD, value: {{ .Values.devDatastores.postgres.password | quote }} }
+          ports: [{ name: pg, containerPort: 5432 }]
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", {{ .Values.database.ownerUser | quote }}] }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: init, mountPath: /docker-entrypoint-initdb.d }
+            - { name: data, mountPath: /var/lib/postgresql }
+      volumes:
+        - name: init
+          configMap: { name: healops-postgres-init }
+        - name: data
+          {{- if .Values.devDatastores.postgres.persistence.enabled }}
+          persistentVolumeClaim: { claimName: healops-postgres }
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- if .Values.devDatastores.postgres.persistence.enabled }}
+---
+# Even in a dev cluster the ledger outlives the pod. With an emptyDir, any restart of this pod --
+# a chart upgrade included -- silently drops the schema the migration hook already ran, and the
+# engine fails closed on every alert after it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: healops-postgres
+  labels: {{- include "healops.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.devDatastores.postgres.persistence.size }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: healops-postgres
+  labels: {{- include "healops.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "healops.selector" "postgres" | nindent 4 }}
+  ports: [{ name: pg, port: 5432, targetPort: pg }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: healops-valkey
+  labels: {{- include "healops.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "healops.selector" "valkey" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "healops.labels" . | nindent 8 }}
+        app.kubernetes.io/component: valkey
+    spec:
+      automountServiceAccountToken: false
+      {{- with $.Values.devDatastores.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: valkey
+          image: {{ .Values.devDatastores.valkey.image | quote }}
+          # Valkey's own binaries -- the redis-* names are compatibility symlinks, not a contract.
+          command: ["valkey-server", "--save", "", "--appendonly", "no"]
+          ports: [{ name: redis, containerPort: 6379 }]
+          readinessProbe:
+            exec: { command: ["valkey-cli", "ping"] }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: healops-valkey
+  labels: {{- include "healops.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "healops.selector" "valkey" | nindent 4 }}
+  ports: [{ name: redis, port: 6379, targetPort: redis }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: healops-s3
+  labels: {{- include "healops.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: {{- include "healops.selector" "s3" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "healops.labels" . | nindent 8 }}
+        app.kubernetes.io/component: s3
+    spec:
+      automountServiceAccountToken: false
+      {{- with $.Values.devDatastores.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: seaweedfs
+          image: {{ .Values.devDatastores.s3.image | quote }}
+          args: ["server", "-dir=/data", "-s3", "-s3.port=8333"]
+          env:
+            # The admin identity; a request signed with any other key is refused.
+            - { name: AWS_ACCESS_KEY_ID, value: {{ .Values.devDatastores.s3.accessKey | quote }} }
+            - { name: AWS_SECRET_ACCESS_KEY, value: {{ .Values.devDatastores.s3.secretKey | quote }} }
+          ports: [{ name: s3, containerPort: 8333 }]
+          readinessProbe:
+            httpGet: { path: /healthz, port: s3 }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 20m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: healops-s3
+  labels: {{- include "healops.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "healops.selector" "s3" | nindent 4 }}
+  ports: [{ name: s3, port: 8333, targetPort: s3 }]
+{{- end }}

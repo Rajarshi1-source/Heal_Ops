@@ -1,0 +1,12 @@
+incident   : node/healops-worker2  KubeNodeNotReady  2026-10-05T05:43:28.452492+00:00
+correlation: cause=KubeNodeNotReady (new_incident); 1 alert(s), 0 symptom(s) attached as evidence
+plan       : cordon healops-worker2 and evict 7 pod(s) onto 2 healthy node(s) (need 240m / 384Mi, have 35310m / 13190Mi)
+             (partially_reversible, ephemeral ttl=2h, blast radius: 7 pods / 1 nodes / internal, confidence 0.90)
+replanned  : MATCH  recorded input reproduces the plan, digest aa749e1b0dad
+policy     : require_approval  [approve-not-promoted, approve-node-scoped, approve-partially-reversible]
+approval   : approved by chaos-suite; deadline 2026-10-05T05:53:30.007237+00:00
+execute    : ok  cordoned healops-worker2 and evicted 7 pod(s)  in 0.7s
+verify     : REMEDIATED  signals within thresholds, no new alerts on the target
+outcome    : remediated
+ledger     : 8 entries, chain VALID, root 2aee33e7c9d9
+bundle     : sha256 fa26534659b02b31e9b58fe06d4bf9338149f3d96587065551772d05722dae0b

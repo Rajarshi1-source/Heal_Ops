@@ -31,6 +31,7 @@ from plan import (
     Reversibility,
     refuse,
 )
+from pricing import replica_cost
 from runbooks.base import ExecutionResult, Runbook, registry
 
 log = structlog.get_logger(__name__)
@@ -40,11 +41,6 @@ HPA_TARGET_STEP = 15
 #: Never drive a utilisation target below this; lower would keep the workload permanently oversized.
 HPA_TARGET_FLOOR = 50
 
-#: Rupees per month for one replica of a small workload, from a pinned price list. Deliberately a
-#: constant rather than a live pricing API: the number needs to be reproducible in the decision
-#: eval, and an approximate figure that gates on the right side is worth more than an exact one
-#: that makes planning non-deterministic.
-INR_PER_REPLICA_MONTH = 420.0
 
 #: Scale-ups expire on their own. Load spikes end, and automation that leaves a workload
 #: permanently oversized has quietly made a capacity decision nobody reviewed.
@@ -194,7 +190,7 @@ class CpuScaleUp(Runbook):
                 + ", ".join(changes)
                 + " (the HPA owns spec.replicas, so patching replicas would be reverted)"
             ),
-            cost_delta_inr_month=headroom * INR_PER_REPLICA_MONTH,
+            cost_delta_inr_month=headroom * replica_cost(target.containers),
         )
 
     def _plan_via_replicas(
@@ -259,7 +255,7 @@ class CpuScaleUp(Runbook):
                 f"scale {target.namespace}/{target.name} from {current} to {desired} replicas "
                 f"(ceiling {ceiling}, expires in {SCALE_TTL_SECONDS // 3600}h)"
             ),
-            cost_delta_inr_month=added * INR_PER_REPLICA_MONTH,
+            cost_delta_inr_month=added * replica_cost(target.containers),
         )
 
     # --- execute ---------------------------------------------------------------------------------
@@ -281,12 +277,11 @@ class CpuScaleUp(Runbook):
                 )
                 detail = f"patched HPA {action.name}: {action.body}"
             else:
-                deployment = await deployment_ops.read_deployment(namespace, plan.target_name)
                 await deployment_ops.scale(
                     namespace,
                     plan.target_name,
                     int(action.body["replicas"]),
-                    deployment.metadata.resource_version,
+                    expect_replicas=int(action.body["from_replicas"]),
                 )
                 detail = f"scaled to {action.body['replicas']} replicas"
         except deployment_ops.ConflictError as exc:
@@ -335,10 +330,21 @@ class CpuScaleUp(Runbook):
                 state_after=before,
             )
 
-        deployment = await deployment_ops.read_deployment(namespace, plan.target_name)
-        await deployment_ops.scale(
-            namespace, plan.target_name, wanted, deployment.metadata.resource_version
-        )
+        try:
+            # Only undo our own number. If a human has since chosen another count, theirs stands.
+            await deployment_ops.scale(
+                namespace,
+                plan.target_name,
+                wanted,
+                expect_replicas=int(undo.body.get("from_replicas", before.get("replicas") or 0)),
+            )
+        except deployment_ops.ConflictError as exc:
+            return ExecutionResult(
+                ok=False,
+                detail=f"not compensated: {exc} -- someone else has changed the replica count",
+                state_before=before,
+                state_after=before,
+            )
         after = await state_capture.capture_deployment(namespace, plan.target_name)
         return ExecutionResult(
             ok=True,

@@ -339,3 +339,13 @@ def test_pod_ops_readers() -> None:
     assert pod_ops.restart_count(pod, "worker") == 0
     condition = pod_ops.resize_condition(pod)
     assert condition is not None and condition.infeasible
+
+
+def test_verification_outlasts_the_alerts_own_lookback() -> None:
+    """Regression, found on kind: judged at 600s, a fix that held was reverted because the OOM
+    that triggered it was still inside the alert's 10-minute lookback."""
+    from config import get_settings
+    from runbooks.oom_memory_bump import VERIFY_WINDOW_SECONDS
+
+    assert VERIFY_WINDOW_SECONDS > 600
+    assert get_settings().verification_deadline_seconds > VERIFY_WINDOW_SECONDS

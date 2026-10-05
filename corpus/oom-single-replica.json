@@ -1,0 +1,79 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodOOMKilled",
+    "annotations": {},
+    "container": "hungry-worker",
+    "fingerprint": "scenario-oom-single-replica",
+    "labels": {
+      "alertname": "KubePodOOMKilled",
+      "container": "hungry-worker",
+      "namespace": "chaos",
+      "node": "healops-worker2",
+      "pod": "hungry-worker-7ff88d694d-p989c",
+      "severity": "warning"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker2",
+    "pod": "hungry-worker-7ff88d694d-p989c",
+    "severity": "warning",
+    "starts_at": null,
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "captured_by_chaos_harness",
+  "expected_effect": "allow",
+  "expected_runbook": "oom_memory_bump",
+  "format_version": 1,
+  "incident_id": "oom-single-replica",
+  "label_note": "One replica, but an in-place resize is reversible and restarts nothing, so the single-replica guard -- which is about disruptive plans -- does not apply. [target captured live; alert synthesised]",
+  "opened_at": null,
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "3",
+      "healops.io/chaos-fixture": "hungry-worker",
+      "meta.helm.sh/release-name": "chaos",
+      "meta.helm.sh/release-namespace": "chaos"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": 100,
+        "cpu_request_millis": 20,
+        "cpu_resize_policy": "NotRequired",
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 256,
+        "memory_peak_mib": 335.5390625,
+        "memory_request_mib": 128,
+        "memory_resize_policy": "NotRequired",
+        "name": "hungry-worker",
+        "restart_count": 0
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {
+      "app": "hungry-worker",
+      "app.kubernetes.io/managed-by": "Helm",
+      "app.kubernetes.io/name": "hungry-worker",
+      "app.kubernetes.io/part-of": "chaos-app"
+    },
+    "name": "hungry-worker",
+    "namespace": "chaos",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "hungry-worker-7ff88d694d-p989c"
+    ],
+    "previous_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+    "previous_revision": 2,
+    "previous_template_digest": "5fee679c925df230a19c30dce1bbd08bfe323292be2761555b69785e5fe1a313",
+    "ready_replicas": 1,
+    "replicas": 1,
+    "revision": 3,
+    "server_supports_in_place_resize": true,
+    "template_digest": "d5c5c041643b04ace7375888f5143e557d0f169d21be158d452ac738e5a6fa30"
+  }
+}

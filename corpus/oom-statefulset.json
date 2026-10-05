@@ -1,0 +1,78 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodOOMKilled",
+    "annotations": {},
+    "container": "crashy",
+    "fingerprint": "scenario-oom-statefulset",
+    "labels": {
+      "alertname": "KubePodOOMKilled",
+      "container": "crashy",
+      "namespace": "chaos",
+      "node": "healops-worker",
+      "pod": "chaos-state-0",
+      "severity": "warning"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker",
+    "pod": "chaos-state-0",
+    "severity": "warning",
+    "starts_at": null,
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "captured_by_chaos_harness",
+  "expected_effect": "deny",
+  "expected_runbook": "oom_memory_bump",
+  "format_version": 1,
+  "incident_id": "oom-statefulset",
+  "label_note": "An OOMKill on a StatefulSet's pod: stateful workloads are never touched by automation (deny-protected-workloads). [target captured live; alert synthesised]",
+  "opened_at": null,
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "meta.helm.sh/release-name": "chaos",
+      "meta.helm.sh/release-namespace": "chaos"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": 50,
+        "cpu_request_millis": 10,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 64,
+        "memory_peak_mib": 15.12890625,
+        "memory_request_mib": 32,
+        "memory_resize_policy": null,
+        "name": "crashy",
+        "restart_count": 16
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "StatefulSet",
+    "labels": {
+      "app": "chaos-state",
+      "app.kubernetes.io/managed-by": "Helm",
+      "app.kubernetes.io/name": "chaos-state",
+      "app.kubernetes.io/part-of": "chaos-app",
+      "healops.io/expected-decision": "deny"
+    },
+    "name": "chaos-state",
+    "namespace": "chaos",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "chaos-state-0"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 0,
+    "replicas": 1,
+    "revision": null,
+    "server_supports_in_place_resize": true,
+    "template_digest": null
+  }
+}

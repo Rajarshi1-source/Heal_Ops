@@ -1,0 +1,33 @@
+# kind cluster (make cluster / the CI chaos job). Images are built locally and `kind load`ed, so
+# they are never pulled. Datastores run in-cluster with no persistence.
+# HealOps' own state lives on the platform pool (k8s/kind/cluster.yaml). The chaos suite drains
+# and kills nodes in the general pool; a drain that took the ledger's database with it would be
+# HealOps remediating HealOps by the back door.
+engine:
+  image:
+    repository: healops-engine
+    tag: "0.1.0"
+    pullPolicy: Never
+  replicas: 1
+  environment: local
+  nodeSelector: { healops.io/pool: platform }
+
+devDatastores:
+  enabled: true
+  nodeSelector: { healops.io/pool: platform }
+  postgres:
+    persistence: { enabled: true, size: 1Gi }
+
+secrets:
+  webhookSharedSecret: change-me
+  approvalsApiToken: local-dashboard-token
+
+dashboard:
+  image:
+    repository: healops-dashboard
+    tag: "0.1.0"
+    pullPolicy: Never
+  nodeSelector: { healops.io/pool: platform }
+  service:
+    type: NodePort
+    nodePort: 30080

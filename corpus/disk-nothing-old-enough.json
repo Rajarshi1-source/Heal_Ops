@@ -1,0 +1,100 @@
+{
+  "cause_alert": {
+    "alertname": "NodeDiskPressure",
+    "annotations": {
+      "healops_archive_candidates": "[]"
+    },
+    "container": null,
+    "fingerprint": "scenario-disk-nothing-old-enough",
+    "labels": {
+      "alertname": "NodeDiskPressure",
+      "node": "healops-worker2",
+      "severity": "warning"
+    },
+    "namespace": null,
+    "node": "healops-worker2",
+    "pod": null,
+    "severity": "warning",
+    "starts_at": null,
+    "status": "firing"
+  },
+  "cause_scope": "node",
+  "correlation_reason": "captured_by_chaos_harness",
+  "expected_effect": "refuse",
+  "expected_runbook": "disk_cleanup",
+  "format_version": 1,
+  "incident_id": "disk-nothing-old-enough",
+  "label_note": "Nothing on this node is both past the 7-day floor and worth archiving: deleting fresh logs is not a fix, so it refuses and a human looks. [target captured live; alert synthesised]",
+  "opened_at": null,
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "node.alpha.kubernetes.io/ttl": "0",
+      "volumes.kubernetes.io/controller-managed-attach-detach": "true"
+    },
+    "autoscaler": null,
+    "containers": [],
+    "drained_workloads": [
+      "chaos/Deployment/crashy-api",
+      "chaos/Deployment/hungry-worker"
+    ],
+    "gitops_manager": "unmanaged",
+    "kind": "Node",
+    "labels": {
+      "beta.kubernetes.io/arch": "amd64",
+      "beta.kubernetes.io/os": "linux",
+      "healops.io/pool": "general",
+      "kubernetes.io/arch": "amd64",
+      "kubernetes.io/hostname": "healops-worker2",
+      "kubernetes.io/os": "linux"
+    },
+    "name": "healops-worker2",
+    "namespace": null,
+    "node": "healops-worker2",
+    "node_state": {
+      "allocatable_cpu_millis": 18000,
+      "allocatable_memory_mib": 7665,
+      "name": "healops-worker2",
+      "pod_count": 3,
+      "ready": true,
+      "requested_cpu_millis": 60,
+      "requested_memory_mib": 192,
+      "schedulable": true
+    },
+    "peer_nodes": [
+      {
+        "allocatable_cpu_millis": 18000,
+        "allocatable_memory_mib": 7665,
+        "name": "healops-worker",
+        "pod_count": 0,
+        "ready": true,
+        "requested_cpu_millis": 640,
+        "requested_memory_mib": 2186,
+        "schedulable": true
+      },
+      {
+        "allocatable_cpu_millis": 18000,
+        "allocatable_memory_mib": 7665,
+        "name": "healops-worker3",
+        "pod_count": 0,
+        "ready": true,
+        "requested_cpu_millis": 240,
+        "requested_memory_mib": 178,
+        "schedulable": true
+      }
+    ],
+    "pods": [
+      "chaos/crashy-api-86f4596cc4-bwg2b",
+      "chaos/crashy-api-86f4596cc4-r2wjg",
+      "chaos/hungry-worker-7ff88d694d-p989c"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 0,
+    "replicas": 1,
+    "revision": null,
+    "server_supports_in_place_resize": true,
+    "template_digest": null
+  }
+}

@@ -1,0 +1,7 @@
+incident   : chaos/Deployment/restart-on-resize  KubePodCrashLooping  2026-10-05T05:26:28.594449+00:00
+correlation: cause=KubePodCrashLooping (new_incident); 1 alert(s), 0 symptom(s) attached as evidence
+plan       : REFUSED by crashloop_rollback: no previous revision to roll back to -- this workload has only ever had one, so the crash is in its first deployment and needs a human
+replanned  : MATCH  recorded input reproduces the plan, digest f586828ef18b
+outcome    : refused
+ledger     : 3 entries, chain VALID, root 875cf269b55e
+bundle     : sha256 1b2bb89bc14bda265e5ee07e1a3399ee6a2778b6f43c03666e4b8614f12e23ad

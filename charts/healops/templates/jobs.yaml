@@ -1,0 +1,144 @@
+# Migrations: forward-only Alembic, expand-contract. An additive migration ships with release N;
+# a destructive one waits for N+1, once no old pods remain. Run as the database OWNER, from this
+# Job only -- the engine itself connects as the least-privilege role.
+#
+# post-install (the datastores must exist first) and pre-upgrade (the schema must be ready before
+# new pods start). The engine is ready before its tables exist: readiness checks reachability,
+# and the worker simply retries until the schema lands.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: healops-migrate-{{ .Release.Revision }}
+  labels: {{- include "healops.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "healops.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext: {{- include "healops.podSecurity" . | nindent 8 }}
+      {{- with .Values.engine.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: alembic
+          image: "{{ .Values.engine.image.repository }}:{{ .Values.engine.image.tag }}"
+          imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
+          workingDir: /app/engine
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - secretRef: { name: {{ include "healops.secret" . }} }
+          securityContext: {{- include "healops.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- if .Values.watchdog.enabled }}
+---
+# The dead-man's switch. Deliberately outside the engine process: the failure it exists to catch is
+# the engine dying between execute() and verify(), and a sweeper in that process would die with it.
+# It also resumes GitOps reconciliation once a mitigation is no longer live -- never the request
+# path.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: healops-watchdog
+  labels: {{- include "healops.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.watchdog.schedule | quote }}
+  # Overlapping sweeps are safe (rows are taken FOR UPDATE SKIP LOCKED) but pointless.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 30
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 55
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            {{- include "healops.labels" . | nindent 12 }}
+            app.kubernetes.io/component: watchdog
+        spec:
+          restartPolicy: Never
+          # Compensation runs the same API calls the runbooks do, so it needs the engine's RBAC.
+          serviceAccountName: healops-engine
+          securityContext: {{- include "healops.podSecurity" . | nindent 12 }}
+          # Placed with the engine: wherever the engine is kept safe, its safety net should be too.
+          {{- with .Values.engine.nodeSelector }}
+          nodeSelector: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: watchdog
+              image: "{{ .Values.engine.image.repository }}:{{ .Values.engine.image.tag }}"
+              imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
+              workingDir: /app/engine/src
+              command: ["python", "-m", "watchdog"]
+              envFrom:
+                - configMapRef: { name: healops-engine }
+                - secretRef: { name: {{ include "healops.secret" . }} }
+              env:
+                - { name: HEALOPS_WORKER_ENABLED, value: "false" }
+              resources:
+                requests: { cpu: 50m, memory: 96Mi }
+                limits: { memory: 192Mi }
+              securityContext: {{- include "healops.containerSecurity" . | nindent 16 }}
+{{- end }}
+{{- if .Values.ledgerPartitions.enabled }}
+---
+# The ledger is partitioned by month. A missing partition is an insert failure, and under the
+# fail-closed rule no ledger write means no action -- so next month's partition is created daily,
+# long before it is needed. Idempotent: ensure_ledger_partition() is a no-op when it exists.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: healops-ledger-partitions
+  labels: {{- include "healops.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.ledgerPartitions.schedule | quote }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "healops.labels" . | nindent 12 }}
+            app.kubernetes.io/component: ledger-partitions
+        spec:
+          restartPolicy: OnFailure
+          automountServiceAccountToken: false
+          {{- with .Values.engine.nodeSelector }}
+          nodeSelector: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: partitions
+              image: {{ .Values.devDatastores.postgres.image | quote }}
+              command:
+                - sh
+                - -c
+                - >-
+                  psql "$PGURI_OWNER" -v ON_ERROR_STOP=1
+                  -c "SELECT ensure_ledger_partition((date_trunc('month', now()) + interval '1 month')::date, '{{ .Values.database.appUser }}')"
+                  -c "SELECT ensure_ledger_partition((date_trunc('month', now()) + interval '2 month')::date, '{{ .Values.database.appUser }}')"
+              envFrom:
+                - secretRef: { name: {{ include "healops.secret" . }} }
+              securityContext: {{- include "healops.containerSecurity" . | nindent 16 }}
+{{- end }}

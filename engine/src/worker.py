@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import Any, Protocol
 
 import structlog
@@ -45,7 +46,7 @@ import promotion
 import recurrence
 import verifier
 from bundle import BundleAlert, IncidentBundle, Target
-from cache import streams
+from cache import dedup_store, streams
 from cache.streams import QueuedJob
 from config import get_settings
 from core import approval_manager
@@ -91,9 +92,7 @@ async def build_target(incident: Incident) -> Target:
             return await state_capture.build_target_for_node(incident.cause_target)
         if not incident.namespace:
             raise UnplannableIncident(f"{incident.target_key} has no namespace to look it up in")
-        target = await state_capture.build_target_for_deployment(
-            incident.namespace, incident.cause_target
-        )
+        target = await _workload_target(incident.namespace, incident.cause_target)
     except ApiException as exc:
         if exc.status == 404:
             # The workload name is guessed from the pod name; a bare pod, or a guess that was
@@ -106,6 +105,22 @@ async def build_target(incident: Incident) -> Target:
     if incident.cause_alertname == "KubePodOOMKilled":
         target = await _with_memory_peaks(target)
     return target
+
+
+async def _workload_target(namespace: str, name: str) -> Target:
+    """The workload behind a pod alert: a Deployment, else a StatefulSet.
+
+    The StatefulSet is captured only to be refused on the record -- no runbook acts on one and
+    policy denies them -- but that refusal is an outcome worth auditing, where "not found" is not.
+    """
+    from k8s import state_capture
+
+    try:
+        return await state_capture.build_target_for_deployment(namespace, name)
+    except ApiException as exc:
+        if exc.status != 404:
+            raise
+    return await state_capture.build_target_for_statefulset(namespace, name)
 
 
 async def _with_memory_peaks(target: Target) -> Target:
@@ -154,6 +169,12 @@ async def plan_incident(
         await escalate_unplannable(incident_id, str(exc))
         return None
 
+    # Disk cleanup plans against the node's actual files, listed on that node before planning, so
+    # the dry-run listing on the plan is exactly what execution will act on.
+    cause_extras: dict[str, str] = {}
+    if incident.cause_alertname == "NodeDiskPressure":
+        cause_extras = await scan_archive_candidates(target.name)
+
     expires_at: str | None = None
     async with transaction() as session:
         incident = await session.get(Incident, incident_id, with_for_update=True)
@@ -163,7 +184,7 @@ async def plan_incident(
         result = await orchestrator.handle(
             session,
             incident,
-            await _bundle(session, incident, target),
+            await _bundle(session, incident, target, cause_extras),
             runbook,
             target,
             budget=await budget.snapshot(
@@ -286,7 +307,33 @@ async def file_masking_issue(event: recurrence.MaskingEvent) -> None:
     await notifier.masking(event, url)
 
 
-async def _bundle(session: AsyncSession, incident: Incident, target: Target) -> IncidentBundle:
+async def scan_archive_candidates(node: str) -> dict[str, str]:
+    """Ask the node agent what is archivable on `node`. An empty answer makes the plan a refusal."""
+    import json
+
+    from k8s import agent_jobs
+
+    settings = get_settings()
+    result = await agent_jobs.run(
+        node,
+        {
+            "op": "scan",
+            "roots": settings.disk_archive_roots,
+            "floor_days": settings.disk_archive_floor_days,
+        },
+    )
+    if not result.get("ok"):
+        log.warning("archive scan failed", node=node, detail=result.get("detail"))
+        return {}
+    return {"healops_archive_candidates": json.dumps(result.get("candidates", []))}
+
+
+async def _bundle(
+    session: AsyncSession,
+    incident: Incident,
+    target: Target,
+    cause_extras: dict[str, str] | None = None,
+) -> IncidentBundle:
     """The planner's whole view of the incident: its alerts and the target, nothing else."""
     events = list(
         (
@@ -301,17 +348,23 @@ async def _bundle(session: AsyncSession, incident: Incident, target: Target) -> 
     cause = causes[-1] if causes else None
     symptoms = tuple(_bundle_alert(e) for e in events if e.role == "symptom")
 
+    cause_alert = (
+        _bundle_alert(cause)
+        if cause is not None
+        else BundleAlert(
+            alertname=incident.cause_alertname,
+            fingerprint="",
+            namespace=incident.namespace,
+        )
+    )
+    if cause_extras:
+        from dataclasses import replace
+
+        cause_alert = replace(cause_alert, annotations={**cause_alert.annotations, **cause_extras})
+
     return IncidentBundle(
         incident_id=str(incident.id),
-        cause_alert=(
-            _bundle_alert(cause)
-            if cause is not None
-            else BundleAlert(
-                alertname=incident.cause_alertname,
-                fingerprint="",
-                namespace=incident.namespace,
-            )
-        ),
+        cause_alert=cause_alert,
         target=target,
         symptom_alerts=symptoms,
         cause_scope=incident.cause_scope,  # type: ignore[arg-type]
@@ -470,8 +523,45 @@ async def conclude(execution_id: int, plan: RemediationPlan, verdict: verifier.V
 # --- approvals ------------------------------------------------------------------------------------
 
 
+#: An incident still `open` this long after it opened has lost its plan job somewhere.
+ORPHAN_AFTER_SECONDS = 120
+
+
+async def requeue_orphans() -> int:
+    """Give every incident stranded in `open` its plan job back.
+
+    Belt and braces: the job is enqueued after the incident commits, so a crash between the two, a
+    Valkey wipe, or a dedup that was keyed too broadly all leave an incident that nothing will ever
+    plan -- open forever, looking like work in progress. Re-enqueuing is safe because planning
+    takes the row lock and does nothing for an incident that has left `open`; the dedup key keeps
+    a slow queue from collecting a duplicate on every pass.
+    """
+    async with session_scope() as session:
+        now = await db_now(session)
+        stranded = list(
+            (
+                await session.execute(
+                    select(Incident.id).where(
+                        Incident.state == IncidentState.OPEN.value,
+                        Incident.opened_at < now - timedelta(seconds=ORPHAN_AFTER_SECONDS),
+                    )
+                )
+            ).scalars()
+        )
+    jobs: list[tuple[str, dict[str, Any]]] = [
+        ("plan", {"incident_id": incident_id, "requeued": True})
+        for incident_id in stranded
+        if not await dedup_store.seen_recently("requeue", ttl_seconds=300, incident_id=incident_id)
+    ]
+    if jobs:
+        await streams.enqueue_batch(jobs)
+        log.warning("requeued stranded incidents", incidents=[j[1]["incident_id"] for j in jobs])
+    return len(jobs)
+
+
 async def reap_pass() -> int:
     """Expire unanswered approvals, escalate their incidents, and retire their Slack cards."""
+    await requeue_orphans()
     cards: list[tuple[RemediationPlan, str | None, str | None]] = []
     async with transaction() as session:
         for approval in await approval_manager.reap_expired(session):
@@ -491,6 +581,26 @@ async def reap_pass() -> int:
     for plan, channel, ts in cards:
         await notifier.approval_expired(plan, channel=channel, message_ts=ts)
     return len(cards)
+
+
+# --- the ledger -----------------------------------------------------------------------------------
+
+#: The chain is walked hourly. A tamper-evidence mechanism nobody checks is decoration.
+LEDGER_CHECK_SECONDS = 3600
+
+
+async def verify_ledger() -> ledger.ChainStatus:
+    """Walk the whole chain and export `healops_ledger_valid`, which alerts on 0."""
+    import metrics
+
+    async with session_scope() as session:
+        status = await ledger.verify_chain(session)
+    metrics.ledger_valid.set(1 if status.valid else 0)
+    metrics.ledger_entries.set(status.entries)
+    metrics.ledger_checked.set_to_current_time()
+    if not status.valid:
+        log.error("ledger chain broken", seq=status.broken_at_seq, detail=status.detail)
+    return status
 
 
 # --- the loops ------------------------------------------------------------------------------------
@@ -513,6 +623,10 @@ class Worker:
             asyncio.create_task(
                 self._run("reaper", self.reap_tick, pause=reap_every),
                 name="healops-reaper",
+            ),
+            asyncio.create_task(
+                self._run("ledger", self.ledger_tick, pause=LEDGER_CHECK_SECONDS),
+                name="healops-ledger",
             ),
         ]
         log.info("worker loops started", consumer=self.consumer)
@@ -594,6 +708,9 @@ class Worker:
         if woken or time.monotonic() - self._last_verification >= poll:
             self._last_verification = time.monotonic()
             await verification_pass()
+
+    async def ledger_tick(self) -> None:
+        await verify_ledger()
 
     async def reap_tick(self) -> None:
         await reap_pass()

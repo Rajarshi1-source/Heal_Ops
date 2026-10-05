@@ -86,6 +86,18 @@ def wired(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> dict[str
     monkeypatch.setattr(worker, "load_all", lambda: registry_of(runbook))
     monkeypatch.setattr(orchestrator.locks, "per_resource", no_lock)
     monkeypatch.setattr(worker.streams, "enqueue", enqueue)
+    requeued = Recorder()
+    monkeypatch.setattr(worker.streams, "enqueue_batch", requeued)
+    seen: set[str] = set()
+
+    async def seen_recently(fingerprint: str, *_: Any, incident_id: Any = None, **__: Any) -> bool:
+        key = f"{fingerprint}:{incident_id}"
+        if key in seen:
+            return True
+        seen.add(key)
+        return False
+
+    monkeypatch.setattr(worker.dedup_store, "seen_recently", seen_recently)
     monkeypatch.setattr(worker.notifier, "orchestrated", orchestrated)
     monkeypatch.setattr(worker.notifier, "verified", verified)
     monkeypatch.setattr(worker.notifier, "approval_expired", expired)
@@ -97,6 +109,7 @@ def wired(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> dict[str
         "orchestrated": orchestrated,
         "verified": verified,
         "expired": expired,
+        "requeued": requeued,
     }
 
 
@@ -353,6 +366,24 @@ async def test_conclude_yields_to_whoever_settled_the_execution_first(
 # --- the reaper -----------------------------------------------------------------------------------
 
 
+async def test_a_stranded_open_incident_gets_its_plan_job_back(
+    db_session: AsyncSession, wired: dict[str, Any]
+) -> None:
+    """Regression, found on the kind cluster: an incident whose plan job never arrived sat `open`
+    forever. The reaper re-enqueues it -- once per dedup window, not on every pass."""
+    stranded = await make_incident(db_session)
+    stranded.opened_at = await db_now(db_session) - timedelta(seconds=600)
+    fresh = await make_incident(db_session)  # just opened: its job is presumably still queued
+    await db_session.flush()
+
+    assert await worker.requeue_orphans() == 1
+    [((jobs,), _)] = wired["requeued"].calls
+    assert jobs == [("plan", {"incident_id": stranded.id, "requeued": True})]
+    assert fresh.id not in [j[1]["incident_id"] for j in jobs]
+
+    assert await worker.requeue_orphans() == 0  # deduplicated inside the window
+
+
 async def test_reap_pass_escalates_and_retires_the_card(
     db_session: AsyncSession, wired: dict[str, Any]
 ) -> None:
@@ -607,11 +638,17 @@ async def test_the_fourth_fix_files_the_masking_issue(
     results = []
     for _ in range(4):
         incident = await make_incident(db_session)
-        results.append(
-            await worker.plan_incident(
-                incident.id, target_builder=target_builder, observe=Observer()
-            )
+        result = await worker.plan_incident(
+            incident.id, target_builder=target_builder, observe=Observer()
         )
+        results.append(result)
+        # Each fix is judged before the same target breaks again; with one still in flight the
+        # next would be blocked, by design, and never reach the recurrence count at all.
+        if result and result.execution_id is not None:
+            done = await db_session.get(RunbookExecution, result.execution_id)
+            assert done is not None
+            done.status = "remediated"
+            await db_session.flush()
 
     assert [r.masking is not None for r in results if r] == [False, False, False, True]
     assert filed and "needs-root-cause" in filed[0][1]
@@ -772,3 +809,38 @@ async def test_an_approved_fix_on_a_managed_workload_still_pauses_the_controller
 
     assert result is not None and result.outcome == "executed"
     assert paused == [execution.id]
+
+
+async def test_the_hourly_chain_check_exports_its_verdict(
+    db_session: AsyncSession, wired: dict[str, Any]
+) -> None:
+    """Regression: an alert on healops_ledger_valid == 0 existed; nothing ever set the gauge."""
+    import ledger
+    import metrics
+
+    await ledger.append(db_session, "freeze", {"reason": "t"})
+    status = await worker.verify_ledger()
+
+    assert status.valid
+    assert metrics.ledger_valid._value.get() == 1.0
+    assert metrics.ledger_entries._value.get() == status.entries
+    assert metrics.ledger_checked._value.get() > 0
+
+
+def test_an_unchecked_chain_is_not_reported_broken() -> None:
+    """Regression: the gauge started at 0, so every follower replica paged "chain broken".
+
+    A fresh interpreter, because the gauge's value at import is the property under test and this
+    process has long since imported it.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "src"
+    probe = (
+        "import math, metrics; "
+        "raise SystemExit(0 if math.isnan(metrics.ledger_valid._value.get()) else 1)"
+    )
+    run = subprocess.run([sys.executable, "-c", probe], cwd=src, check=False)  # noqa: S603
+    assert run.returncode == 0

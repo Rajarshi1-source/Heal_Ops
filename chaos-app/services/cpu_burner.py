@@ -2,8 +2,13 @@
 
 Chaos fixture for runbook `cpu_scale_up`.
 
-Burning is on demand (`POST /burn?seconds=600&workers=2`) as well as on start, because the storm
-demo needs faults to begin on cue rather than whenever a pod happened to schedule.
+Two ways to make it hot, and only one of them is a fair test of the runbook:
+
+* **`GET /work?ms=N`** spends N ms of this thread's CPU time per request. Driven at a fixed rate by
+  `cpu-load` through the Service, this is CPU that comes from load -- so the runbook's fix, more
+  replicas, genuinely spreads it thinner. This is the fault the chaos tests and the demo inject.
+* **`POST /burn`** spins on its own, whatever the replica count. Scaling out cannot fix that, so it
+  stays only as a way to show the verifier refusing to call a non-fix a fix.
 
 The burn loop runs in *threads*, not processes, and each thread does integer work in a tight loop.
 Python's GIL means one thread saturates roughly one core; `workers` above the container's CPU limit
@@ -53,6 +58,19 @@ def _start_burn(seconds: int, workers: int) -> None:
     print(f"cpu-burner: burning with {workers} workers for {seconds}s", flush=True)
 
 
+def _work(ms: float) -> None:
+    """Spend `ms` of this thread's own CPU time.
+
+    Thread CPU time, not wall time: under CFS throttling a wall-clock loop would count the time the
+    cgroup spent paused, and every request would cost less CPU the hotter the pod got.
+    """
+    until = time.thread_time() + ms / 1000.0
+    x = 0
+    while time.thread_time() < until:
+        for _ in range(500):
+            x = (x * 31 + 17) & 0xFFFFFFFF
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -67,6 +85,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/work"):
+            _work(min(float(parse_qs(parsed.query).get("ms", ["2"])[0]), 1000.0))
+            self._json(200, {"ok": True})
+            return
         if parsed.path.startswith("/stop"):
             global _burn_until
             _burn_until = 0.0

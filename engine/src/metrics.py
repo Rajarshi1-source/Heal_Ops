@@ -99,7 +99,17 @@ ledger_valid = Gauge(
     "tamper-evidence real rather than decorative.",
 )
 
+# Unchecked is neither valid nor broken. A gauge starting at 0 would page "chain broken" from every
+# follower replica -- only the leader walks the chain -- so it starts as NaN, which `== 0` never
+# matches, and staleness is its own alert on the timestamp below.
+ledger_valid.set(float("nan"))
+
 ledger_entries = Gauge("healops_ledger_entries", "Entries in the audit chain.")
+
+ledger_checked = Gauge(
+    "healops_ledger_checked_timestamp_seconds",
+    "When this replica last walked the chain. A check nobody runs is decoration too.",
+)
 
 # --- queue and transport ------------------------------------------------------------------------
 queue_depth = Gauge("healops_queue_depth", "Pending messages on the remediation stream.")

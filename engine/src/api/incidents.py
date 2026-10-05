@@ -281,156 +281,180 @@ async def _summary(session: AsyncSession, incident: Incident) -> dict[str, Any]:
 @router.get("/api/incidents/{incident_id}", summary="One incident with all of its evidence")
 async def get_incident(incident_id: int) -> dict[str, Any]:
     async with session_scope() as session:
-        incident = await session.get(Incident, incident_id)
-        if incident is None:
-            raise HTTPException(status_code=404, detail=f"no incident {incident_id}")
+        detail = await incident_detail(session, incident_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail=f"no incident {incident_id}")
+    return detail
 
-        alerts = (
-            await session.execute(
-                select(AlertEvent)
-                .where(AlertEvent.incident_id == incident_id)
-                .order_by(AlertEvent.received_at)
-            )
-        ).scalars()
-        plans = (
-            await session.execute(
-                select(RemediationPlanRow)
-                .where(RemediationPlanRow.incident_id == incident_id)
-                .order_by(RemediationPlanRow.created_at)
-            )
-        ).scalars()
-        executions = list(
-            (
-                await session.execute(
-                    select(RunbookExecution)
-                    .where(RunbookExecution.incident_id == incident_id)
-                    .order_by(RunbookExecution.id)
-                )
-            ).scalars()
-        )
-        ids = [e.id for e in executions]
-        approvals = (
-            (await session.execute(select(Approval).where(Approval.execution_id.in_(ids))))
-            .scalars()
-            .all()
-            if ids
-            else []
-        )
-        verifications = (
-            (
-                await session.execute(
-                    select(Verification)
-                    .where(Verification.execution_id.in_(ids))
-                    .order_by(Verification.checked_at)
-                )
-            )
-            .scalars()
-            .all()
-            if ids
-            else []
-        )
-        ledger_rows = (
-            await session.execute(
-                select(AuditLedger)
-                .where(AuditLedger.incident_id == incident_id)
-                .order_by(AuditLedger.seq)
-            )
-        ).scalars()
 
-        summary = await _summary(session, incident)
-        return {
-            **summary,
-            "closed_at": incident.closed_at,
-            "alerts": [
-                {
-                    "id": a.id,
-                    "alertname": a.alertname,
-                    "status": a.status,
-                    "role": a.role,
-                    "severity": a.severity,
-                    "fingerprint": a.fingerprint,
-                    "namespace": a.namespace,
-                    "pod": a.pod_name,
-                    "node": a.node_name,
-                    "starts_at": a.starts_at,
-                    "received_at": a.received_at,
-                }
-                for a in alerts
-            ],
-            "plans": [
-                {
-                    "id": p.id,
-                    "runbook": p.runbook,
-                    "planner_version": p.planner_version,
-                    "summary": p.summary,
-                    "target_key": f"{p.target_namespace or '-'}/{p.target_kind}/{p.target_name}",
-                    "actions": p.actions,
-                    "compensation": p.compensation,
-                    "reversibility": p.reversibility,
-                    "durability": p.durability,
-                    "ttl_seconds": p.ttl_seconds,
-                    "blast_radius": p.blast_radius,
-                    "expected_signal": p.expected_signal,
-                    "confidence": float(p.confidence),
-                    "cost_delta_inr_month": float(p.cost_delta_inr_month),
-                    "refusal_reason": p.refusal_reason,
-                    "policy_decision": p.policy_decision,
-                    "policy_reasons": list(p.policy_reasons),
-                    "created_at": p.created_at,
-                }
-                for p in plans
-            ],
-            "executions": [
-                {
-                    "id": e.id,
-                    "plan_id": e.plan_id,
-                    "runbook": e.runbook,
-                    "status": e.status,
-                    "mode": e.mode,
-                    "detail": e.detail,
-                    "state_before": e.state_before,
-                    "state_after": e.state_after,
-                    "signals_before": e.signals_before,
-                    "started_at": e.started_at,
-                    "finished_at": e.finished_at,
-                    "expires_at": e.expires_at,
-                    "durability": e.durability,
-                    "gitops_managed": e.gitops_managed,
-                    "gitops_paused": e.gitops_paused,
-                    "compensated": e.compensated,
-                    "pr_url": e.pr_url,
-                }
-                for e in executions
-            ],
-            "approvals": [_approval(a) for a in approvals],
-            "verifications": [
-                {
-                    "execution_id": v.execution_id,
-                    "outcome": v.outcome,
-                    "alert_cleared": v.alert_cleared,
-                    "signals_before": v.signals_before,
-                    "signals_after": v.signals_after,
-                    "reasons": list(v.reasons),
-                    "compensated": v.compensated,
-                    "window_seconds": v.window_seconds,
-                    "checked_at": v.checked_at,
-                }
-                for v in verifications
-            ],
-            "ledger": [
-                {
-                    "seq": row.seq,
-                    "occurred_at": row.occurred_at,
-                    "event_type": row.event_type,
-                    "actor": row.actor,
-                    "execution_id": row.execution_id,
-                    "payload": row.payload,
-                    "prev_hash": row.prev_hash,
-                    "hash": row.hash,
-                }
-                for row in ledger_rows
-            ],
-        }
+@router.get(
+    "/api/incidents/{incident_id}/evidence",
+    summary="The content-addressed evidence bundle, and its offline replay",
+)
+async def get_evidence(incident_id: int) -> dict[str, Any]:
+    import evidence
+    import replay
+
+    async with session_scope() as session:
+        bundle = await evidence.build(session, incident_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail=f"no incident {incident_id}")
+    return {"sha256": evidence.sha256(bundle), "replay": replay.render(bundle), "bundle": bundle}
+
+
+async def incident_detail(session: AsyncSession, incident_id: int) -> dict[str, Any] | None:
+    """Everything recorded about one incident. Shared by the API and the evidence bundle."""
+    incident = await session.get(Incident, incident_id)
+    if incident is None:
+        return None
+
+    alerts = (
+        await session.execute(
+            select(AlertEvent)
+            .where(AlertEvent.incident_id == incident_id)
+            .order_by(AlertEvent.received_at)
+        )
+    ).scalars()
+    plans = (
+        await session.execute(
+            select(RemediationPlanRow)
+            .where(RemediationPlanRow.incident_id == incident_id)
+            .order_by(RemediationPlanRow.created_at)
+        )
+    ).scalars()
+    executions = list(
+        (
+            await session.execute(
+                select(RunbookExecution)
+                .where(RunbookExecution.incident_id == incident_id)
+                .order_by(RunbookExecution.id)
+            )
+        ).scalars()
+    )
+    ids = [e.id for e in executions]
+    approvals = (
+        (await session.execute(select(Approval).where(Approval.execution_id.in_(ids))))
+        .scalars()
+        .all()
+        if ids
+        else []
+    )
+    verifications = (
+        (
+            await session.execute(
+                select(Verification)
+                .where(Verification.execution_id.in_(ids))
+                .order_by(Verification.checked_at)
+            )
+        )
+        .scalars()
+        .all()
+        if ids
+        else []
+    )
+    ledger_rows = (
+        await session.execute(
+            select(AuditLedger)
+            .where(AuditLedger.incident_id == incident_id)
+            .order_by(AuditLedger.seq)
+        )
+    ).scalars()
+
+    summary = await _summary(session, incident)
+    return {
+        **summary,
+        "closed_at": incident.closed_at,
+        "alerts": [
+            {
+                "id": a.id,
+                "alertname": a.alertname,
+                "status": a.status,
+                "role": a.role,
+                "severity": a.severity,
+                "fingerprint": a.fingerprint,
+                "namespace": a.namespace,
+                "pod": a.pod_name,
+                "node": a.node_name,
+                "starts_at": a.starts_at,
+                "received_at": a.received_at,
+            }
+            for a in alerts
+        ],
+        "plans": [
+            {
+                "id": p.id,
+                "runbook": p.runbook,
+                "planner_version": p.planner_version,
+                "summary": p.summary,
+                "target_key": f"{p.target_namespace or '-'}/{p.target_kind}/{p.target_name}",
+                "actions": p.actions,
+                "compensation": p.compensation,
+                "reversibility": p.reversibility,
+                "durability": p.durability,
+                "ttl_seconds": p.ttl_seconds,
+                "blast_radius": p.blast_radius,
+                "expected_signal": p.expected_signal,
+                "confidence": float(p.confidence),
+                "cost_delta_inr_month": float(p.cost_delta_inr_month),
+                "refusal_reason": p.refusal_reason,
+                "policy_decision": p.policy_decision,
+                "policy_reasons": list(p.policy_reasons),
+                "created_at": p.created_at,
+            }
+            for p in plans
+        ],
+        "executions": [
+            {
+                "id": e.id,
+                "plan_id": e.plan_id,
+                "runbook": e.runbook,
+                "status": e.status,
+                "mode": e.mode,
+                "detail": e.detail,
+                "state_before": e.state_before,
+                "state_after": e.state_after,
+                "signals_before": e.signals_before,
+                "started_at": e.started_at,
+                "finished_at": e.finished_at,
+                "expires_at": e.expires_at,
+                "durability": e.durability,
+                "gitops_managed": e.gitops_managed,
+                "gitops_paused": e.gitops_paused,
+                "compensated": e.compensated,
+                "pr_url": e.pr_url,
+            }
+            for e in executions
+        ],
+        "approvals": [_approval(a) for a in approvals],
+        "verifications": [
+            {
+                "execution_id": v.execution_id,
+                "outcome": v.outcome,
+                "alert_cleared": v.alert_cleared,
+                "signals_before": v.signals_before,
+                "signals_after": v.signals_after,
+                "reasons": list(v.reasons),
+                "compensated": v.compensated,
+                "window_seconds": v.window_seconds,
+                "checked_at": v.checked_at,
+            }
+            for v in verifications
+        ],
+        "ledger": [
+            {
+                "seq": row.seq,
+                "occurred_at": row.occurred_at,
+                "event_type": row.event_type,
+                "actor": row.actor,
+                "incident_id": row.incident_id,
+                "execution_id": row.execution_id,
+                "payload": row.payload,
+                "prev_hash": row.prev_hash,
+                "hash": row.hash,
+            }
+            for row in ledger_rows
+        ],
+    }
 
 
 def _approval(a: Approval) -> dict[str, Any]:

@@ -206,10 +206,7 @@ class RemediationPlan:
         The decision eval asserts that the same incident bundle produces a byte-identical plan.
         `plan_id` is excluded because it is assigned per run, not derived from the decision.
         """
-        data = self.to_dict()
-        data.pop("plan_id", None)
-        payload = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
-        return hashlib.sha256(payload.encode()).hexdigest()
+        return digest_of(self.to_dict())
 
     def describe_actions(self) -> list[str]:
         return [a.describe() for a in self.actions]
@@ -220,6 +217,13 @@ class RemediationPlan:
 
     def with_plan_id(self, plan_id: str) -> Self:
         return replace(self, plan_id=plan_id)
+
+
+def digest_of(data: dict[str, Any]) -> str:
+    """The digest of a serialised plan -- so a plan read back from the ledger compares exactly."""
+    data = {k: v for k, v in data.items() if k != "plan_id"}
+    payload = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def refuse(

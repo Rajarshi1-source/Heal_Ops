@@ -16,6 +16,8 @@ is the verifier's job.
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 
 from bundle import IncidentBundle, Target
@@ -74,15 +76,16 @@ class CrashLoopRollback(Runbook):
             )
 
         current_image = target.containers[0].image if target.containers else None
-        if target.previous_image and current_image == target.previous_image:
-            # The previous revision runs the same image, so rolling back cannot change the outcome.
-            # This is the "rollback onto an equally broken revision" case, caught at plan time
-            # instead of being discovered by verification after the fact.
+        if _rollback_changes_nothing(target, current_image):
+            # The previous revision is the same pod template, so rolling back cannot change the
+            # outcome. This is the "rollback onto an equally broken revision" case, caught at plan
+            # time instead of being discovered by verification after the fact.
             return refuse(
                 self.name,
                 bundle.incident_id,
-                f"the previous revision runs the same image ({current_image}) -- a rollback would "
-                "land on an equally broken revision, so this is a config or dependency problem",
+                "the previous revision is the same pod template -- a rollback would land on an "
+                "equally broken revision, so the cause is outside this workload's spec (a "
+                "dependency, a node, or data) and needs a human",
                 target_kind=target.kind,
                 target_name=target.name,
                 target_namespace=target.namespace,
@@ -97,6 +100,9 @@ class CrashLoopRollback(Runbook):
                 "to_revision": target.previous_revision,
                 "from_revision": target.revision,
                 "to_image": target.previous_image,
+                **_template_ids(
+                    to=target.previous_template_digest, came_from=target.template_digest
+                ),
             },
         )
         # The undo of a rollback is a roll *forward* to the revision we came from, and it is
@@ -111,6 +117,9 @@ class CrashLoopRollback(Runbook):
                 "to_revision": target.revision,
                 "from_revision": target.previous_revision,
                 "to_image": current_image,
+                **_template_ids(
+                    to=target.template_digest, came_from=target.previous_template_digest
+                ),
             },
         )
 
@@ -169,9 +178,9 @@ class CrashLoopRollback(Runbook):
 
         target_revision = int(plan.actions[0].body["to_revision"])
         revisions = await deployment_ops.list_revisions(namespace, plan.target_name)
-        wanted = next((r for r in revisions if r.revision == target_revision), None)
+        wanted = _find(revisions, plan.actions[0].body)
         if wanted is None:
-            # The revision was garbage-collected between planning and execution. Re-planning is the
+            # The template was garbage-collected between planning and execution. Re-planning is the
             # right response; inventing a different target revision is not.
             return ExecutionResult(
                 ok=False,
@@ -218,19 +227,20 @@ class CrashLoopRollback(Runbook):
         namespace = plan.target_namespace or "default"
         before = await state_capture.capture_deployment(namespace, plan.target_name)
 
-        wanted_revision = int(plan.compensation[0].body["to_revision"])
+        undo = plan.compensation[0].body
+        wanted_revision = int(undo["to_revision"])
         revisions = await deployment_ops.list_revisions(namespace, plan.target_name)
 
-        current = revisions[0].revision if revisions else None
-        if current == wanted_revision:
+        if await _already_on(namespace, plan.target_name, undo, revisions):
             return ExecutionResult(
                 ok=True,
-                detail=f"already on revision {wanted_revision}; nothing to compensate",
+                detail=f"already on the template of revision {wanted_revision}; nothing to "
+                "compensate",
                 state_before=before,
                 state_after=before,
             )
 
-        wanted = next((r for r in revisions if r.revision == wanted_revision), None)
+        wanted = _find(revisions, undo)
         if wanted is None:
             return ExecutionResult(
                 ok=False,
@@ -311,6 +321,62 @@ def _confidence(target: Target) -> float:
         confidence -= 0.05
 
     return round(min(confidence, 0.99), 3)
+
+
+def _template_ids(*, to: str | None, came_from: str | None) -> dict[str, str]:
+    """Templates named by digest, when captured: the only stable name a revision has.
+
+    Kubernetes renumbers a revision every time its ReplicaSet is reused -- roll back from 8 to 7
+    and 7 becomes 9; roll forward and the 8 you came from is now 10. An undo that looked its
+    target up by number was registered before acting and could not be found after it. Found on the
+    kind cluster: "cannot compensate: revision 8 is gone", with revision 8's template sitting right
+    there as revision 10. The numbers stay on the plan for people; the digests are what it uses.
+    """
+    ids: dict[str, str] = {}
+    if to:
+        ids["to_template"] = to
+    if came_from:
+        ids["from_template"] = came_from
+    return ids
+
+
+def _find(revisions: list[Any], body: dict[str, Any]) -> Any | None:
+    """The revision a call means: by template digest when the plan has one, else by number."""
+    digest = body.get("to_template")
+    if digest:
+        from k8s.state_capture import template_digest
+
+        return next((r for r in revisions if template_digest(r.template) == digest), None)
+    number = int(body["to_revision"])
+    return next((r for r in revisions if r.revision == number), None)
+
+
+async def _already_on(
+    namespace: str, name: str, body: dict[str, Any], revisions: list[Any]
+) -> bool:
+    """Is the Deployment already running the template this call would restore? (Idempotency.)"""
+    digest = body.get("to_template")
+    if digest:
+        from k8s import deployment_ops
+        from k8s.state_capture import template_digest
+
+        deployment = await deployment_ops.read_deployment(namespace, name)
+        return bool(template_digest(deployment.spec.template) == digest)
+    current = revisions[0].revision if revisions else None
+    return bool(current == int(body["to_revision"]))
+
+
+def _rollback_changes_nothing(target: Target, current_image: str | None) -> bool:
+    """Whether the previous revision is the revision we are on, in everything but its number.
+
+    Compared on the whole template, not the image. A bad config rollout -- an env var, an argument,
+    a probe -- on an unchanged image is exactly what a rollback undoes, and refusing it as "the
+    same image" would refuse the commonest bad deploy there is. Only without captured digests does
+    this fall back to the image, the conservative reading.
+    """
+    if target.template_digest and target.previous_template_digest:
+        return target.template_digest == target.previous_template_digest
+    return bool(target.previous_image) and current_image == target.previous_image
 
 
 registry.register(CrashLoopRollback())

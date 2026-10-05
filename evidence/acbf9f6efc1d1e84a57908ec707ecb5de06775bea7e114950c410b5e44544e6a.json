@@ -1,0 +1,895 @@
+{
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alertname": "NodeDiskPressure",
+      "fingerprint": "3d2f719e10b640ec",
+      "id": 111,
+      "namespace": null,
+      "node": "healops-worker3",
+      "pod": null,
+      "received_at": "2026-10-05T05:32:01.541475+00:00",
+      "role": "cause",
+      "severity": "warning",
+      "starts_at": "2026-10-05T05:32:01.526368+00:00",
+      "status": "firing"
+    }
+  ],
+  "approvals": [
+    {
+      "decided_at": "2026-10-05T05:32:12.131449+00:00",
+      "decided_by": "chaos-suite",
+      "execution_id": 3,
+      "expires_at": "2026-10-05T05:42:07.967756+00:00",
+      "incident_id": 24,
+      "reason": "Approval required: this runbook has not yet earned unattended authority in this namespace. Authority is earned per namespace, not granted globally.; Approval required: node-level actions move every pod on the node. Cordon is reversible; the rescheduling is not.; Approval required: the planner's confidence is below the automatic threshold. The confidence number is graded in CI, so a low value here is meaningful rather than decorative.; Approval required: this fix has side effects that persist after the undo, so it is not fully reversible.",
+      "requested_at": "2026-10-05T05:32:07.967756+00:00",
+      "status": "approved"
+    }
+  ],
+  "cause_alertname": "NodeDiskPressure",
+  "cause_scope": "node",
+  "closed_at": null,
+  "correlation_reason": "new_incident",
+  "executions": [
+    {
+      "compensated": false,
+      "detail": "archived and removed 9 files, freeing 60.8 MiB",
+      "durability": "ephemeral",
+      "expires_at": "2026-10-05T07:32:12.164743+00:00",
+      "finished_at": "2026-10-05T05:32:22.409771+00:00",
+      "gitops_managed": false,
+      "gitops_paused": false,
+      "id": 3,
+      "mode": "approval",
+      "plan_id": "01a10a8c-480d-7a08-9a60-3e3fe3c0dc00",
+      "pr_url": null,
+      "runbook": "disk_cleanup",
+      "signals_before": {
+        "alert_firing": false,
+        "custom": {
+          "disk_used_ratio": 0.07607567800916448
+        },
+        "memory_usage_ratio": null,
+        "new_alerts": [],
+        "oom_events": null,
+        "pending_alerts": [],
+        "psi_full": null,
+        "restarts": null,
+        "throttle_ratio": null
+      },
+      "started_at": "2026-10-05T05:32:12.306973+00:00",
+      "state_after": {
+        "archived": [
+          {
+            "key": "logs/healops-worker3/var_log_chaos_archived-011.log",
+            "path": "/var/log/chaos/archived-011.log",
+            "size_bytes": 7077888
+          },
+          {
+            "key": "logs/healops-worker3/var_log_chaos_archived-010.log",
+            "path": "/var/log/chaos/archived-010.log",
+            "size_bytes": 7077888
+          },
+          {
+            "key": "logs/healops-worker3/var_log_chaos_archived-009.log",
+            "path": "/var/log/chaos/archived-009.log",
+            "size_bytes": 7077888
+          },
+          {
+            "key": "logs/healops-worker3/var_log_chaos_archived-008.log",
+            "path": "/var/log/chaos/archived-008.log",
+            "size_bytes": 7077888
+          },
+          {
+            "key": "logs/healops-worker3/var_log_chaos_archived-007.log",
+            "path": "/var/log/chaos/archived-007.log",
+            "size_bytes": 7077888
+          },
+          {
+            "key": "logs/healops-worker3/var_log_chaos_archived-006.log",
+            "path": "/var/log/chaos/archived-006.log",
+            "size_bytes": 7077888
+          },
+          {
+            "key": "logs/healops-worker3/var_log_chaos_archived-005.log",
+            "path": "/var/log/chaos/archived-005.log",
+            "size_bytes": 7077888
+          },
+          {
+            "key": "logs/healops-worker3/var_log_chaos_archived-004.log",
+            "path": "/var/log/chaos/archived-004.log",
+            "size_bytes": 7077888
+          },
+          {
+            "key": "logs/healops-worker3/var_log_chaos_archived-003.log",
+            "path": "/var/log/chaos/archived-003.log",
+            "size_bytes": 7077888
+          }
+        ],
+        "freed_bytes": 63700992,
+        "node": "healops-worker3"
+      },
+      "state_before": {
+        "files": [
+          {
+            "path": "/var/log/chaos/archived-011.log",
+            "size_bytes": 7077888
+          },
+          {
+            "path": "/var/log/chaos/archived-010.log",
+            "size_bytes": 7077888
+          },
+          {
+            "path": "/var/log/chaos/archived-009.log",
+            "size_bytes": 7077888
+          },
+          {
+            "path": "/var/log/chaos/archived-008.log",
+            "size_bytes": 7077888
+          },
+          {
+            "path": "/var/log/chaos/archived-007.log",
+            "size_bytes": 7077888
+          },
+          {
+            "path": "/var/log/chaos/archived-006.log",
+            "size_bytes": 7077888
+          },
+          {
+            "path": "/var/log/chaos/archived-005.log",
+            "size_bytes": 7077888
+          },
+          {
+            "path": "/var/log/chaos/archived-004.log",
+            "size_bytes": 7077888
+          },
+          {
+            "path": "/var/log/chaos/archived-003.log",
+            "size_bytes": 7077888
+          }
+        ],
+        "node": "healops-worker3",
+        "total_bytes": 63700992
+      },
+      "status": "remediated"
+    }
+  ],
+  "format_version": 1,
+  "id": 24,
+  "ledger": [
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "89870ddd92ef19f6f281638696f6412a24f640f07982d28c92dda4a640eca7f8",
+      "incident_id": 24,
+      "occurred_at": "2026-10-05T05:32:01.541475+00:00",
+      "payload": {
+        "alertname": "NodeDiskPressure",
+        "correlation_reason": "new_incident",
+        "created_incident": true,
+        "fingerprint": "3d2f719e10b640ec",
+        "role": "cause",
+        "stage": "ingest",
+        "target_key": "node/healops-worker3"
+      },
+      "prev_hash": "2574bd373b9ecabd394cb356f982f1fe02ac8122f74b8619e86904869311f27f",
+      "seq": 88
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "6ea6a56e81f3bdacbba2b9655e3b7a5889efb73beb0aace7f1ec34c75262191a",
+      "incident_id": 24,
+      "occurred_at": "2026-10-05T05:32:07.967756+00:00",
+      "payload": {
+        "alertname": "NodeDiskPressure",
+        "input": {
+          "cause_alert": {
+            "alertname": "NodeDiskPressure",
+            "annotations": {
+              "healops_archive_candidates": "[{\"age_days\": 8.95, \"path\": \"/var/log/chaos/archived-003.log\", \"size_bytes\": 7077888}, {\"age_days\": 11.58, \"path\": \"/var/log/chaos/archived-004.log\", \"size_bytes\": 7077888}, {\"age_days\": 14.22, \"path\": \"/var/log/chaos/archived-005.log\", \"size_bytes\": 7077888}, {\"age_days\": 16.86, \"path\": \"/var/log/chaos/archived-006.log\", \"size_bytes\": 7077888}, {\"age_days\": 19.49, \"path\": \"/var/log/chaos/archived-007.log\", \"size_bytes\": 7077888}, {\"age_days\": 22.13, \"path\": \"/var/log/chaos/archived-008.log\", \"size_bytes\": 7077888}, {\"age_days\": 24.77, \"path\": \"/var/log/chaos/archived-009.log\", \"size_bytes\": 7077888}, {\"age_days\": 27.4, \"path\": \"/var/log/chaos/archived-010.log\", \"size_bytes\": 7077888}, {\"age_days\": 30.04, \"path\": \"/var/log/chaos/archived-011.log\", \"size_bytes\": 7077888}]",
+              "summary": "chaos suite: disk pressure on healops-worker3"
+            },
+            "container": null,
+            "fingerprint": "3d2f719e10b640ec",
+            "labels": {
+              "alertname": "NodeDiskPressure",
+              "healops_runbook": "disk_cleanup",
+              "node": "healops-worker3",
+              "severity": "warning"
+            },
+            "namespace": null,
+            "node": "healops-worker3",
+            "pod": null,
+            "severity": "warning",
+            "starts_at": "2026-10-05T05:32:01.526368+00:00",
+            "status": "firing"
+          },
+          "cause_scope": "node",
+          "correlation_reason": "new_incident",
+          "expected_effect": null,
+          "expected_runbook": null,
+          "format_version": 1,
+          "incident_id": "24",
+          "label_note": null,
+          "opened_at": "2026-10-05T05:32:01.541475+00:00",
+          "symptom_alerts": [],
+          "target": {
+            "annotations": {
+              "node.alpha.kubernetes.io/ttl": "0",
+              "volumes.kubernetes.io/controller-managed-attach-detach": "true"
+            },
+            "autoscaler": null,
+            "containers": [],
+            "drained_workloads": [
+              "chaos/Deployment/cpu-burner",
+              "chaos/Deployment/crashy-api",
+              "chaos/Deployment/log-spammer"
+            ],
+            "gitops_manager": "unmanaged",
+            "kind": "Node",
+            "labels": {
+              "beta.kubernetes.io/arch": "amd64",
+              "beta.kubernetes.io/os": "linux",
+              "healops.io/pool": "general",
+              "kubernetes.io/arch": "amd64",
+              "kubernetes.io/hostname": "healops-worker3",
+              "kubernetes.io/os": "linux"
+            },
+            "name": "healops-worker3",
+            "namespace": null,
+            "node": "healops-worker3",
+            "node_state": {
+              "allocatable_cpu_millis": 18000,
+              "allocatable_memory_mib": 7665,
+              "name": "healops-worker3",
+              "pod_count": 3,
+              "ready": true,
+              "requested_cpu_millis": 90,
+              "requested_memory_mib": 96,
+              "schedulable": true
+            },
+            "peer_nodes": [
+              {
+                "allocatable_cpu_millis": 18000,
+                "allocatable_memory_mib": 7665,
+                "name": "healops-worker",
+                "pod_count": 0,
+                "ready": true,
+                "requested_cpu_millis": 640,
+                "requested_memory_mib": 2186,
+                "schedulable": true
+              },
+              {
+                "allocatable_cpu_millis": 18000,
+                "allocatable_memory_mib": 7665,
+                "name": "healops-worker2",
+                "pod_count": 0,
+                "ready": true,
+                "requested_cpu_millis": 210,
+                "requested_memory_mib": 274,
+                "schedulable": true
+              }
+            ],
+            "pods": [
+              "chaos/cpu-burner-5879f48bb8-fmlmf",
+              "chaos/crashy-api-6775f995fc-b2r6w",
+              "chaos/log-spammer-74647d66c7-x2nk6"
+            ],
+            "previous_image": null,
+            "previous_revision": null,
+            "previous_template_digest": null,
+            "ready_replicas": 0,
+            "replicas": 1,
+            "revision": null,
+            "server_supports_in_place_resize": true,
+            "template_digest": null
+          }
+        },
+        "runbook": "disk_cleanup",
+        "target": "-/Node/healops-worker3"
+      },
+      "prev_hash": "89870ddd92ef19f6f281638696f6412a24f640f07982d28c92dda4a640eca7f8",
+      "seq": 89
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan",
+      "execution_id": null,
+      "hash": "07cb034ca9a1b8d06e416be63779255a6ed95744dd35be6688e8f01ba0c91d87",
+      "incident_id": 24,
+      "occurred_at": "2026-10-05T05:32:07.967756+00:00",
+      "payload": {
+        "actions": [
+          {
+            "body": {
+              "bucket": "healops-archives",
+              "files": [
+                {
+                  "age_days": 30.0,
+                  "path": "/var/log/chaos/archived-011.log",
+                  "size_bytes": 7077888
+                },
+                {
+                  "age_days": 27.4,
+                  "path": "/var/log/chaos/archived-010.log",
+                  "size_bytes": 7077888
+                },
+                {
+                  "age_days": 24.8,
+                  "path": "/var/log/chaos/archived-009.log",
+                  "size_bytes": 7077888
+                },
+                {
+                  "age_days": 22.1,
+                  "path": "/var/log/chaos/archived-008.log",
+                  "size_bytes": 7077888
+                },
+                {
+                  "age_days": 19.5,
+                  "path": "/var/log/chaos/archived-007.log",
+                  "size_bytes": 7077888
+                },
+                {
+                  "age_days": 16.9,
+                  "path": "/var/log/chaos/archived-006.log",
+                  "size_bytes": 7077888
+                },
+                {
+                  "age_days": 14.2,
+                  "path": "/var/log/chaos/archived-005.log",
+                  "size_bytes": 7077888
+                },
+                {
+                  "age_days": 11.6,
+                  "path": "/var/log/chaos/archived-004.log",
+                  "size_bytes": 7077888
+                },
+                {
+                  "age_days": 8.9,
+                  "path": "/var/log/chaos/archived-003.log",
+                  "size_bytes": 7077888
+                }
+              ],
+              "floor_days": 7,
+              "total_bytes": 63700992
+            },
+            "name": "healops-worker3",
+            "namespace": null,
+            "resource": "v1/Node",
+            "subresource": null,
+            "verb": "s3_archive_then_delete"
+          }
+        ],
+        "blast_radius": {
+          "namespaces": [],
+          "nodes": 1,
+          "pods": 0,
+          "user_facing": false
+        },
+        "blast_radius_score": 10,
+        "compensation": [
+          {
+            "body": {
+              "bucket": "healops-archives",
+              "files": [
+                {
+                  "key": "logs/healops-worker3/var_log_chaos_archived-011.log",
+                  "path": "/var/log/chaos/archived-011.log"
+                },
+                {
+                  "key": "logs/healops-worker3/var_log_chaos_archived-010.log",
+                  "path": "/var/log/chaos/archived-010.log"
+                },
+                {
+                  "key": "logs/healops-worker3/var_log_chaos_archived-009.log",
+                  "path": "/var/log/chaos/archived-009.log"
+                },
+                {
+                  "key": "logs/healops-worker3/var_log_chaos_archived-008.log",
+                  "path": "/var/log/chaos/archived-008.log"
+                },
+                {
+                  "key": "logs/healops-worker3/var_log_chaos_archived-007.log",
+                  "path": "/var/log/chaos/archived-007.log"
+                },
+                {
+                  "key": "logs/healops-worker3/var_log_chaos_archived-006.log",
+                  "path": "/var/log/chaos/archived-006.log"
+                },
+                {
+                  "key": "logs/healops-worker3/var_log_chaos_archived-005.log",
+                  "path": "/var/log/chaos/archived-005.log"
+                },
+                {
+                  "key": "logs/healops-worker3/var_log_chaos_archived-004.log",
+                  "path": "/var/log/chaos/archived-004.log"
+                },
+                {
+                  "key": "logs/healops-worker3/var_log_chaos_archived-003.log",
+                  "path": "/var/log/chaos/archived-003.log"
+                }
+              ]
+            },
+            "name": "healops-worker3",
+            "namespace": null,
+            "resource": "v1/Node",
+            "subresource": null,
+            "verb": "s3_restore"
+          }
+        ],
+        "confidence": 0.73,
+        "cost_delta_inr_month": 0.0,
+        "durability": "ephemeral",
+        "expected_signal": {
+          "alert_should_clear": "NodeDiskPressure",
+          "queries": {
+            "disk_used_ratio": "max(1 - (node_filesystem_avail_bytes{node=\"healops-worker3\",mountpoint=\"/var/log/chaos\",fstype!~\"tmpfs|overlay|ramfs\"} / node_filesystem_size_bytes{node=\"healops-worker3\",mountpoint=\"/var/log/chaos\",fstype!~\"tmpfs|overlay|ramfs\"})) or max(1 - (node_filesystem_avail_bytes{node=\"healops-worker3\",mountpoint=\"/var/log\",fstype!~\"tmpfs|overlay|ramfs\"} / node_filesystem_size_bytes{node=\"healops-worker3\",mountpoint=\"/var/log\",fstype!~\"tmpfs|overlay|ramfs\"})) or max(1 - (node_filesystem_avail_bytes{node=\"healops-worker3\",mountpoint=\"/var\",fstype!~\"tmpfs|overlay|ramfs\"} / node_filesystem_size_bytes{node=\"healops-worker3\",mountpoint=\"/var\",fstype!~\"tmpfs|overlay|ramfs\"})) or max(1 - (node_filesystem_avail_bytes{node=\"healops-worker3\",mountpoint=\"/\",fstype!~\"tmpfs|overlay|ramfs\"} / node_filesystem_size_bytes{node=\"healops-worker3\",mountpoint=\"/\",fstype!~\"tmpfs|overlay|ramfs\"}))"
+          },
+          "thresholds": {
+            "disk_used_ratio": 0.8
+          },
+          "window_seconds": 300
+        },
+        "gitops_managed": false,
+        "incident_id": "24",
+        "plan_id": "",
+        "planner_version": "0",
+        "refusal_reason": null,
+        "reversibility": "partially_reversible",
+        "runbook": "disk_cleanup",
+        "summary": "archive 9 log files (60.8 MiB) older than 7d from healops-worker3 to s3://healops-archives, then delete the originals",
+        "target_kind": "Node",
+        "target_name": "healops-worker3",
+        "target_namespace": null,
+        "ttl_seconds": 7200
+      },
+      "prev_hash": "6ea6a56e81f3bdacbba2b9655e3b7a5889efb73beb0aace7f1ec34c75262191a",
+      "seq": 90
+    },
+    {
+      "actor": "healops",
+      "event_type": "policy",
+      "execution_id": null,
+      "hash": "d7ae8bbf04541d99cf65d753d5f57ab0c6d76087522f32b967ab028421281036",
+      "incident_id": 24,
+      "occurred_at": "2026-10-05T05:32:07.967756+00:00",
+      "payload": {
+        "decision": "require_approval",
+        "messages": [
+          "Approval required: this runbook has not yet earned unattended authority in this namespace. Authority is earned per namespace, not granted globally.",
+          "Approval required: node-level actions move every pod on the node. Cordon is reversible; the rescheduling is not.",
+          "Approval required: the planner's confidence is below the automatic threshold. The confidence number is graded in CI, so a low value here is meaningful rather than decorative.",
+          "Approval required: this fix has side effects that persist after the undo, so it is not fully reversible."
+        ],
+        "reasons": [
+          "approve-not-promoted",
+          "approve-node-scoped",
+          "approve-low-confidence",
+          "approve-partially-reversible"
+        ]
+      },
+      "prev_hash": "07cb034ca9a1b8d06e416be63779255a6ed95744dd35be6688e8f01ba0c91d87",
+      "seq": 91
+    },
+    {
+      "actor": "healops",
+      "event_type": "approve",
+      "execution_id": 3,
+      "hash": "7d911dcbc0e02f00bc7084abab1c5a7678837ddd1293bbbd5fe77b7ffaecfc64",
+      "incident_id": 24,
+      "occurred_at": "2026-10-05T05:32:07.967756+00:00",
+      "payload": {
+        "messages": [
+          "Approval required: this runbook has not yet earned unattended authority in this namespace. Authority is earned per namespace, not granted globally.",
+          "Approval required: node-level actions move every pod on the node. Cordon is reversible; the rescheduling is not.",
+          "Approval required: the planner's confidence is below the automatic threshold. The confidence number is graded in CI, so a low value here is meaningful rather than decorative.",
+          "Approval required: this fix has side effects that persist after the undo, so it is not fully reversible."
+        ],
+        "plan_id": "01a10a8c-480d-7a08-9a60-3e3fe3c0dc00",
+        "reasons": [
+          "approve-not-promoted",
+          "approve-node-scoped",
+          "approve-low-confidence",
+          "approve-partially-reversible"
+        ],
+        "stage": "requested"
+      },
+      "prev_hash": "d7ae8bbf04541d99cf65d753d5f57ab0c6d76087522f32b967ab028421281036",
+      "seq": 92
+    },
+    {
+      "actor": "chaos-suite",
+      "event_type": "approve",
+      "execution_id": 3,
+      "hash": "778987f5747d27e4a6591bbce161d4dfee6901f05f9b096a3c5935cb1f978e7e",
+      "incident_id": 24,
+      "occurred_at": "2026-10-05T05:32:12.131449+00:00",
+      "payload": {
+        "decided_by": "chaos-suite",
+        "execution_id": 3,
+        "stage": "granted"
+      },
+      "prev_hash": "7d911dcbc0e02f00bc7084abab1c5a7678837ddd1293bbbd5fe77b7ffaecfc64",
+      "seq": 93
+    },
+    {
+      "actor": "healops",
+      "event_type": "execute",
+      "execution_id": 3,
+      "hash": "8075f92b7e1f84abf2ea2593bba0991f6c3efb2594ea93d2b4858c15f89c2acb",
+      "incident_id": 24,
+      "occurred_at": "2026-10-05T05:32:12.164743+00:00",
+      "payload": {
+        "detail": "archived and removed 9 files, freeing 60.8 MiB",
+        "ok": true,
+        "plan_id": "01a10a8c-480d-7a08-9a60-3e3fe3c0dc00",
+        "state_after": {
+          "archived": [
+            {
+              "key": "logs/healops-worker3/var_log_chaos_archived-011.log",
+              "path": "/var/log/chaos/archived-011.log",
+              "size_bytes": 7077888
+            },
+            {
+              "key": "logs/healops-worker3/var_log_chaos_archived-010.log",
+              "path": "/var/log/chaos/archived-010.log",
+              "size_bytes": 7077888
+            },
+            {
+              "key": "logs/healops-worker3/var_log_chaos_archived-009.log",
+              "path": "/var/log/chaos/archived-009.log",
+              "size_bytes": 7077888
+            },
+            {
+              "key": "logs/healops-worker3/var_log_chaos_archived-008.log",
+              "path": "/var/log/chaos/archived-008.log",
+              "size_bytes": 7077888
+            },
+            {
+              "key": "logs/healops-worker3/var_log_chaos_archived-007.log",
+              "path": "/var/log/chaos/archived-007.log",
+              "size_bytes": 7077888
+            },
+            {
+              "key": "logs/healops-worker3/var_log_chaos_archived-006.log",
+              "path": "/var/log/chaos/archived-006.log",
+              "size_bytes": 7077888
+            },
+            {
+              "key": "logs/healops-worker3/var_log_chaos_archived-005.log",
+              "path": "/var/log/chaos/archived-005.log",
+              "size_bytes": 7077888
+            },
+            {
+              "key": "logs/healops-worker3/var_log_chaos_archived-004.log",
+              "path": "/var/log/chaos/archived-004.log",
+              "size_bytes": 7077888
+            },
+            {
+              "key": "logs/healops-worker3/var_log_chaos_archived-003.log",
+              "path": "/var/log/chaos/archived-003.log",
+              "size_bytes": 7077888
+            }
+          ],
+          "freed_bytes": 63700992,
+          "node": "healops-worker3"
+        },
+        "state_before": {
+          "files": [
+            {
+              "path": "/var/log/chaos/archived-011.log",
+              "size_bytes": 7077888
+            },
+            {
+              "path": "/var/log/chaos/archived-010.log",
+              "size_bytes": 7077888
+            },
+            {
+              "path": "/var/log/chaos/archived-009.log",
+              "size_bytes": 7077888
+            },
+            {
+              "path": "/var/log/chaos/archived-008.log",
+              "size_bytes": 7077888
+            },
+            {
+              "path": "/var/log/chaos/archived-007.log",
+              "size_bytes": 7077888
+            },
+            {
+              "path": "/var/log/chaos/archived-006.log",
+              "size_bytes": 7077888
+            },
+            {
+              "path": "/var/log/chaos/archived-005.log",
+              "size_bytes": 7077888
+            },
+            {
+              "path": "/var/log/chaos/archived-004.log",
+              "size_bytes": 7077888
+            },
+            {
+              "path": "/var/log/chaos/archived-003.log",
+              "size_bytes": 7077888
+            }
+          ],
+          "node": "healops-worker3",
+          "total_bytes": 63700992
+        }
+      },
+      "prev_hash": "778987f5747d27e4a6591bbce161d4dfee6901f05f9b096a3c5935cb1f978e7e",
+      "seq": 94
+    },
+    {
+      "actor": "healops",
+      "event_type": "verify",
+      "execution_id": 3,
+      "hash": "5ff5ef7dca5277d1ab5ed2652e4db64af8af6815123082dd100ed158964b2340",
+      "incident_id": 24,
+      "occurred_at": "2026-10-05T05:37:29.341911+00:00",
+      "payload": {
+        "alert_cleared": true,
+        "new_alerts": [],
+        "outcome": "remediated",
+        "reasons": [
+          "alert cleared, signals within thresholds, no new alerts on the target"
+        ],
+        "signals_after": {
+          "custom:disk_used_ratio": 0.07602431041361457,
+          "memory_usage_ratio": null,
+          "oom_events": null,
+          "psi_full": null,
+          "restarts": null,
+          "throttle_ratio": null
+        },
+        "signals_before": {
+          "custom:disk_used_ratio": 0.07607567800916448,
+          "memory_usage_ratio": null,
+          "oom_events": null,
+          "psi_full": null,
+          "restarts": null,
+          "throttle_ratio": null
+        }
+      },
+      "prev_hash": "ee458b2f0c9c7c341366c03c7b27eea7000dfa23018d5556b5560318f51d5265",
+      "seq": 110
+    }
+  ],
+  "mode": "approval",
+  "namespace": null,
+  "opened_at": "2026-10-05T05:32:01.541475+00:00",
+  "outcome": "remediated",
+  "outcome_detail": "remediated",
+  "plans": [
+    {
+      "actions": [
+        {
+          "body": {
+            "bucket": "healops-archives",
+            "files": [
+              {
+                "age_days": 30.0,
+                "path": "/var/log/chaos/archived-011.log",
+                "size_bytes": 7077888
+              },
+              {
+                "age_days": 27.4,
+                "path": "/var/log/chaos/archived-010.log",
+                "size_bytes": 7077888
+              },
+              {
+                "age_days": 24.8,
+                "path": "/var/log/chaos/archived-009.log",
+                "size_bytes": 7077888
+              },
+              {
+                "age_days": 22.1,
+                "path": "/var/log/chaos/archived-008.log",
+                "size_bytes": 7077888
+              },
+              {
+                "age_days": 19.5,
+                "path": "/var/log/chaos/archived-007.log",
+                "size_bytes": 7077888
+              },
+              {
+                "age_days": 16.9,
+                "path": "/var/log/chaos/archived-006.log",
+                "size_bytes": 7077888
+              },
+              {
+                "age_days": 14.2,
+                "path": "/var/log/chaos/archived-005.log",
+                "size_bytes": 7077888
+              },
+              {
+                "age_days": 11.6,
+                "path": "/var/log/chaos/archived-004.log",
+                "size_bytes": 7077888
+              },
+              {
+                "age_days": 8.9,
+                "path": "/var/log/chaos/archived-003.log",
+                "size_bytes": 7077888
+              }
+            ],
+            "floor_days": 7,
+            "total_bytes": 63700992
+          },
+          "name": "healops-worker3",
+          "namespace": null,
+          "resource": "v1/Node",
+          "subresource": null,
+          "verb": "s3_archive_then_delete"
+        }
+      ],
+      "blast_radius": {
+        "namespaces": [],
+        "nodes": 1,
+        "pods": 0,
+        "score": 10,
+        "user_facing": false
+      },
+      "compensation": [
+        {
+          "body": {
+            "bucket": "healops-archives",
+            "files": [
+              {
+                "key": "logs/healops-worker3/var_log_chaos_archived-011.log",
+                "path": "/var/log/chaos/archived-011.log"
+              },
+              {
+                "key": "logs/healops-worker3/var_log_chaos_archived-010.log",
+                "path": "/var/log/chaos/archived-010.log"
+              },
+              {
+                "key": "logs/healops-worker3/var_log_chaos_archived-009.log",
+                "path": "/var/log/chaos/archived-009.log"
+              },
+              {
+                "key": "logs/healops-worker3/var_log_chaos_archived-008.log",
+                "path": "/var/log/chaos/archived-008.log"
+              },
+              {
+                "key": "logs/healops-worker3/var_log_chaos_archived-007.log",
+                "path": "/var/log/chaos/archived-007.log"
+              },
+              {
+                "key": "logs/healops-worker3/var_log_chaos_archived-006.log",
+                "path": "/var/log/chaos/archived-006.log"
+              },
+              {
+                "key": "logs/healops-worker3/var_log_chaos_archived-005.log",
+                "path": "/var/log/chaos/archived-005.log"
+              },
+              {
+                "key": "logs/healops-worker3/var_log_chaos_archived-004.log",
+                "path": "/var/log/chaos/archived-004.log"
+              },
+              {
+                "key": "logs/healops-worker3/var_log_chaos_archived-003.log",
+                "path": "/var/log/chaos/archived-003.log"
+              }
+            ]
+          },
+          "name": "healops-worker3",
+          "namespace": null,
+          "resource": "v1/Node",
+          "subresource": null,
+          "verb": "s3_restore"
+        }
+      ],
+      "confidence": 0.73,
+      "cost_delta_inr_month": 0.0,
+      "created_at": "2026-10-05T05:32:07.967756+00:00",
+      "durability": "ephemeral",
+      "expected_signal": {
+        "alert_should_clear": "NodeDiskPressure",
+        "queries": {
+          "disk_used_ratio": "max(1 - (node_filesystem_avail_bytes{node=\"healops-worker3\",mountpoint=\"/var/log/chaos\",fstype!~\"tmpfs|overlay|ramfs\"} / node_filesystem_size_bytes{node=\"healops-worker3\",mountpoint=\"/var/log/chaos\",fstype!~\"tmpfs|overlay|ramfs\"})) or max(1 - (node_filesystem_avail_bytes{node=\"healops-worker3\",mountpoint=\"/var/log\",fstype!~\"tmpfs|overlay|ramfs\"} / node_filesystem_size_bytes{node=\"healops-worker3\",mountpoint=\"/var/log\",fstype!~\"tmpfs|overlay|ramfs\"})) or max(1 - (node_filesystem_avail_bytes{node=\"healops-worker3\",mountpoint=\"/var\",fstype!~\"tmpfs|overlay|ramfs\"} / node_filesystem_size_bytes{node=\"healops-worker3\",mountpoint=\"/var\",fstype!~\"tmpfs|overlay|ramfs\"})) or max(1 - (node_filesystem_avail_bytes{node=\"healops-worker3\",mountpoint=\"/\",fstype!~\"tmpfs|overlay|ramfs\"} / node_filesystem_size_bytes{node=\"healops-worker3\",mountpoint=\"/\",fstype!~\"tmpfs|overlay|ramfs\"}))"
+        },
+        "thresholds": {
+          "disk_used_ratio": 0.8
+        },
+        "window_seconds": 300
+      },
+      "id": "01a10a8c-480d-7a08-9a60-3e3fe3c0dc00",
+      "planner_version": "1.0.0",
+      "policy_decision": "require_approval",
+      "policy_reasons": [
+        "approve-not-promoted",
+        "approve-node-scoped",
+        "approve-low-confidence",
+        "approve-partially-reversible"
+      ],
+      "refusal_reason": null,
+      "reversibility": "partially_reversible",
+      "runbook": "disk_cleanup",
+      "summary": "archive 9 log files (60.8 MiB) older than 7d from healops-worker3 to s3://healops-archives, then delete the originals",
+      "target_key": "-/Node/healops-worker3",
+      "ttl_seconds": 7200
+    }
+  ],
+  "runbook": "disk_cleanup",
+  "state": "remediated",
+  "summary": "archive 9 log files (60.8 MiB) older than 7d from healops-worker3 to s3://healops-archives, then delete the originals",
+  "target_key": "node/healops-worker3",
+  "trail": [
+    {
+      "detail": "new_incident",
+      "label": "1 alert(s)",
+      "stage": "correlate",
+      "state": "passed"
+    },
+    {
+      "detail": "archive 9 log files (60.8 MiB) older than 7d from healops-worker3 to s3://healops-archives, then delete the originals",
+      "label": "disk_cleanup",
+      "stage": "plan",
+      "state": "passed"
+    },
+    {
+      "detail": "approve-not-promoted, approve-node-scoped, approve-low-confidence, approve-partially-reversible",
+      "label": "approval required",
+      "stage": "policy",
+      "state": "passed"
+    },
+    {
+      "detail": "chaos-suite",
+      "label": "approved",
+      "stage": "gate",
+      "state": "passed"
+    },
+    {
+      "detail": "archived and removed 9 files, freeing 60.8 MiB",
+      "label": "applied",
+      "stage": "execute",
+      "state": "passed"
+    },
+    {
+      "detail": "alert cleared, signals within thresholds, no new alerts on the target",
+      "label": "remediated",
+      "stage": "verify",
+      "state": "passed"
+    },
+    {
+      "detail": "",
+      "label": "remediated",
+      "stage": "outcome",
+      "state": "passed"
+    }
+  ],
+  "verifications": [
+    {
+      "alert_cleared": true,
+      "checked_at": "2026-10-05T05:37:29.341911+00:00",
+      "compensated": false,
+      "execution_id": 3,
+      "outcome": "remediated",
+      "reasons": [
+        "alert cleared, signals within thresholds, no new alerts on the target"
+      ],
+      "signals_after": {
+        "custom:disk_used_ratio": 0.07602431041361457,
+        "memory_usage_ratio": null,
+        "oom_events": null,
+        "psi_full": null,
+        "restarts": null,
+        "throttle_ratio": null
+      },
+      "signals_before": {
+        "custom:disk_used_ratio": 0.07607567800916448,
+        "memory_usage_ratio": null,
+        "oom_events": null,
+        "psi_full": null,
+        "restarts": null,
+        "throttle_ratio": null
+      },
+      "window_seconds": 300
+    }
+  ]
+}

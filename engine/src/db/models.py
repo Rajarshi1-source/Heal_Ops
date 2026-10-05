@@ -24,6 +24,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    FetchedValue,
     ForeignKey,
     Index,
     Integer,
@@ -93,6 +94,9 @@ class AlertEvent(Base):
 
 class Incident(Base):
     __tablename__ = "incidents"
+    # `closed_at` is set by a trigger (migration 005). Fetch it back in the same statement with
+    # RETURNING, so reading it after a flush is not a lazy load -- an async session cannot do one.
+    __mapper_args__ = {"eager_defaults": True}
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     state: Mapped[str] = mapped_column(String(32), nullable=False, server_default="open")
@@ -110,7 +114,10 @@ class Incident(Base):
     opened_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=NOW
     )
-    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Written by the database when the state first becomes terminal (migration 005), not by us.
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=FetchedValue(), server_onupdate=FetchedValue()
+    )
     outcome: Mapped[str | None] = mapped_column(String(32))
 
     executions: Mapped[list[RunbookExecution]] = relationship(back_populates="incident")

@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: healops-engine
+  labels: {{- include "healops.labels" . | nindent 4 }}
+data:
+  HEALOPS_ENVIRONMENT: {{ .Values.engine.environment | quote }}
+  HEALOPS_READ_ONLY: {{ .Values.engine.readOnly | quote }}
+  HEALOPS_WORKER_ENABLED: {{ .Values.engine.workerEnabled | quote }}
+  HEALOPS_PROMETHEUS_URL: {{ .Values.observability.prometheusUrl | quote }}
+  HEALOPS_ALERTMANAGER_URL: {{ .Values.observability.alertmanagerUrl | quote }}
+  HEALOPS_SELF_NAMESPACE: {{ .Release.Namespace | quote }}
+  HEALOPS_POLICY_FILE: {{ .Values.policy.file | quote }}
+  HEALOPS_SLACK_CHANNEL: {{ .Values.slack.channel | quote }}
+  HEALOPS_GITHUB_REPO: {{ .Values.github.repo | quote }}
+  HEALOPS_GITHUB_BASE_BRANCH: {{ .Values.github.baseBranch | quote }}
+  HEALOPS_S3_BUCKET: {{ .Values.s3.bucket | quote }}
+  HEALOPS_ARGOCD_NAMESPACE: {{ .Values.gitops.argocd.namespace | quote }}
+  HEALOPS_VERIFICATION_DEADLINE_SECONDS: {{ .Values.watchdog.deadlineSeconds | quote }}
+  HEALOPS_NODE_AGENT_MODE: {{ ternary "job" "local" .Values.nodeAgent.enabled | quote }}
+  HEALOPS_NODE_AGENT_IMAGE: "{{ .Values.engine.image.repository }}:{{ .Values.engine.image.tag }}"
+  HEALOPS_NODE_AGENT_SECRET: {{ include "healops.secret" . | quote }}
+  HEALOPS_NODE_AGENT_CONFIG_MAP: "healops-engine"
+  HEALOPS_NODE_AGENT_TIMEOUT_SECONDS: {{ .Values.nodeAgent.timeoutSeconds | quote }}
+  HEALOPS_DISK_ARCHIVE_ROOTS: {{ .Values.nodeAgent.archiveRoots | toJson | quote }}
+  {{- with (include "healops.s3Endpoint" .) }}
+  HEALOPS_S3_ENDPOINT: {{ . | quote }}
+  {{- end }}
+  AWS_DEFAULT_REGION: {{ .Values.s3.region | quote }}
+  # The Python runtime writes nothing to the read-only root filesystem.
+  PYTHONDONTWRITEBYTECODE: "1"
+{{- if not .Values.existingSecret }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: healops-engine
+  labels: {{- include "healops.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  HEALOPS_DATABASE_URL: "postgresql+asyncpg://{{ .Values.database.appUser }}:{{ include "healops.appPassword" . }}@{{ include "healops.dbHost" . }}:{{ .Values.database.port }}/{{ .Values.database.name }}"
+  HEALOPS_MIGRATION_DATABASE_URL: "postgresql+asyncpg://{{ .Values.database.ownerUser }}:{{ include "healops.ownerPassword" . }}@{{ include "healops.dbHost" . }}:{{ .Values.database.port }}/{{ .Values.database.name }}"
+  PGURI_OWNER: "postgresql://{{ .Values.database.ownerUser }}:{{ include "healops.ownerPassword" . }}@{{ include "healops.dbHost" . }}:{{ .Values.database.port }}/{{ .Values.database.name }}"
+  HEALOPS_REDIS_URL: {{ include "healops.redisUrl" . | quote }}
+  {{- if .Values.engine.readOnly }}
+  # A read-only engine rejects every webhook before reading the token, so there is nothing to
+  # protect -- and a public deploy should carry no secret it does not use.
+  HEALOPS_WEBHOOK_SHARED_SECRET: "unused-in-read-only-mode"
+  {{- else }}
+  HEALOPS_WEBHOOK_SHARED_SECRET: {{ required "secrets.webhookSharedSecret is required" .Values.secrets.webhookSharedSecret | quote }}
+  {{- end }}
+  {{- with .Values.secrets.slackBotToken }}
+  HEALOPS_SLACK_BOT_TOKEN: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.secrets.slackSigningSecret }}
+  HEALOPS_SLACK_SIGNING_SECRET: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.secrets.githubToken }}
+  HEALOPS_GITHUB_TOKEN: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.secrets.approvalsApiToken }}
+  HEALOPS_APPROVALS_API_TOKEN: {{ . | quote }}
+  {{- end }}
+  AWS_ACCESS_KEY_ID: {{ ternary .Values.devDatastores.s3.accessKey .Values.s3.accessKeyId .Values.devDatastores.enabled | quote }}
+  AWS_SECRET_ACCESS_KEY: {{ ternary .Values.devDatastores.s3.secretKey .Values.s3.secretAccessKey .Values.devDatastores.enabled | quote }}
+{{- end }}

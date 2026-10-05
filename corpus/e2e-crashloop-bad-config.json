@@ -1,0 +1,114 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodCrashLooping",
+    "annotations": {
+      "description": "Container crashy-api in chaos/crashy-api-654bd5946f-5s84j on node healops-worker2 has been in CrashLoopBackOff for 2m.",
+      "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+      "summary": "Pod chaos/crashy-api-654bd5946f-5s84j is crash looping"
+    },
+    "container": "crashy-api",
+    "fingerprint": "e22b5048865bc75d",
+    "labels": {
+      "alertname": "KubePodCrashLooping",
+      "container": "crashy-api",
+      "healops_runbook": "crashloop_rollback",
+      "namespace": "chaos",
+      "node": "healops-worker2",
+      "pod": "crashy-api-654bd5946f-5s84j",
+      "prometheus": "monitoring/kps-prometheus",
+      "severity": "critical"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker2",
+    "pod": "crashy-api-654bd5946f-5s84j",
+    "severity": "critical",
+    "starts_at": "2026-10-05T05:24:28.996000+00:00",
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "new_incident",
+  "expected_effect": "allow",
+  "expected_runbook": "crashloop_rollback",
+  "format_version": 1,
+  "incident_id": "e2e-crashloop-bad-config",
+  "label_note": "A bad config rollout on an unchanged image; the previous template differs, so a rollback is a genuine fix. Three replicas, internal: inside every automatic threshold. [captured end to end: incident #19, evidence b91d29f8bca7]",
+  "opened_at": "2026-10-05T05:24:43.600419+00:00",
+  "symptom_alerts": [
+    {
+      "alertname": "KubePodCrashLooping",
+      "annotations": {
+        "description": "Container crashy-api in chaos/crashy-api-654bd5946f-wjfvk on node healops-worker2 has been in CrashLoopBackOff for 2m.",
+        "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+        "summary": "Pod chaos/crashy-api-654bd5946f-wjfvk is crash looping"
+      },
+      "container": "crashy-api",
+      "fingerprint": "2ce5e569783567f5",
+      "labels": {
+        "alertname": "KubePodCrashLooping",
+        "container": "crashy-api",
+        "healops_runbook": "crashloop_rollback",
+        "namespace": "chaos",
+        "node": "healops-worker2",
+        "pod": "crashy-api-654bd5946f-wjfvk",
+        "prometheus": "monitoring/kps-prometheus",
+        "severity": "critical"
+      },
+      "namespace": "chaos",
+      "node": "healops-worker2",
+      "pod": "crashy-api-654bd5946f-wjfvk",
+      "severity": "critical",
+      "starts_at": "2026-10-05T05:23:58.996000+00:00",
+      "status": "firing"
+    }
+  ],
+  "target": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "6",
+      "healops.io/chaos-fixture": "crashy-api",
+      "meta.helm.sh/release-name": "chaos",
+      "meta.helm.sh/release-namespace": "chaos"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": 100,
+        "cpu_request_millis": 20,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 64,
+        "memory_peak_mib": null,
+        "memory_request_mib": 32,
+        "memory_resize_policy": null,
+        "name": "crashy-api",
+        "restart_count": 6
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {
+      "app": "crashy-api",
+      "app.kubernetes.io/managed-by": "Helm",
+      "app.kubernetes.io/name": "crashy-api",
+      "app.kubernetes.io/part-of": "chaos-app"
+    },
+    "name": "crashy-api",
+    "namespace": "chaos",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "crashy-api-654bd5946f-5s84j",
+      "crashy-api-654bd5946f-wjfvk",
+      "crashy-api-654bd5946f-z6sqk"
+    ],
+    "previous_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+    "previous_revision": 5,
+    "previous_template_digest": "273fb8658610479b464e95d399ce5febc665c0845ba42a8e40ea90ca81832b98",
+    "ready_replicas": 0,
+    "replicas": 3,
+    "revision": 6,
+    "server_supports_in_place_resize": true,
+    "template_digest": "169d38a47071218698896b1680650a383061977ea1485dc914c4c29503f35572"
+  }
+}

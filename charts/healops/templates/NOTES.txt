@@ -1,0 +1,23 @@
+HealOps {{ .Chart.AppVersion }} is installed in {{ .Release.Namespace }}.
+
+  Engine      http://{{ include "healops.engine" . }}.{{ .Release.Namespace }}.svc:8000   (/healthz, /metrics, /docs)
+  Webhook     POST /api/webhooks/alertmanager   (Bearer = secrets.webhookSharedSecret)
+{{- if .Values.dashboard.enabled }}
+  Dashboard   kubectl -n {{ .Release.Namespace }} port-forward svc/healops-dashboard 3000
+{{- end }}
+
+{{- if .Values.engine.readOnly }}
+
+READ-ONLY: this engine refuses every write path and runs no worker. Nothing here can change a
+cluster{{ if not .Values.rbac.create }}, and it has no Kubernetes permissions at all{{ end }}.
+{{- else }}
+
+Every runbook starts in SHADOW in every namespace: it records what it would have done and touches
+nothing. Authority is earned on the promotion ladder, or granted by hand -- on the record:
+
+  healopsctl promote crashloop_rollback chaos --to approval --reason "staging evidence"
+
+HealOps never remediates HealOps: label the namespace so every layer agrees.
+
+  kubectl label namespace {{ .Release.Namespace }} healops.io/remediation=disabled --overwrite
+{{- end }}

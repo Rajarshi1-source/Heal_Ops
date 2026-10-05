@@ -1,0 +1,11 @@
+incident   : chaos/Deployment/hungry-worker  KubePodOOMKilled  2026-10-05T05:55:58.375905+00:00
+correlation: cause=KubePodOOMKilled (new_incident); 1 alert(s), 0 symptom(s) attached as evidence
+plan       : raise chaos/hungry-worker-67c8c4f7d6-ffd8f hungry-worker memory 256Mi -> 384Mi in place (no restart)
+             (reversible, ephemeral ttl=2h, blast radius: 1 pods / 0 nodes / internal, confidence 0.90)
+replanned  : MATCH  recorded input reproduces the plan, digest 0d58ccc418a0
+policy     : allow  [no rule fired]
+execute    : ok  raised hungry-worker memory 256Mi -> 384Mi in place; restartCount unchanged at 2  in 2.1s
+verify     : REMEDIATED  alert cleared, signals within thresholds, no new alerts on the target
+outcome    : remediated
+ledger     : 6 entries, chain VALID, root 716777b28820
+bundle     : sha256 00d82a6129c9288f59038ead1f9dbb543d228a77d6c23d72a3659c8889c5207c

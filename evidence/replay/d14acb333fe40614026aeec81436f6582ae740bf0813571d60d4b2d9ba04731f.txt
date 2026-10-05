@@ -1,0 +1,7 @@
+incident   : chaos/Deployment/restart-on-resize  KubePodOOMKilled  2026-10-05T04:38:43.938244+00:00
+correlation: cause=KubePodOOMKilled (new_incident); 1 alert(s), 0 symptom(s) attached as evidence
+plan       : REFUSED by oom_memory_bump: hungry declares resizePolicy RestartContainer for memory, so an in-place bump would restart it -- escalating instead of claiming no restart
+replanned  : MATCH  recorded input reproduces the plan, digest 4a0c4f171d06
+outcome    : refused
+ledger     : 3 entries, chain VALID, root 04a9e510068a
+bundle     : sha256 d14acb333fe40614026aeec81436f6582ae740bf0813571d60d4b2d9ba04731f

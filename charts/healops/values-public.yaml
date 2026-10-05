@@ -1,0 +1,34 @@
+# The public, read-only tier: the résumé link.
+#
+# A dashboard and an engine serving recorded incidents from a restored database -- and nothing that
+# can change a cluster. The engine refuses every write path (`readOnly`), runs no worker, has no
+# Kubernetes permissions at all (`rbac.create: false`), and the dashboard image is the read-only
+# build, so it contains no approval control to find. The real engine lives only in the demo cluster
+# with the chaos app, behind auth.
+#
+# Never expose an endpoint that can trigger remediation from the public internet.
+engine:
+  replicas: 1
+  environment: prod
+  readOnly: true
+  workerEnabled: false
+
+rbac:
+  create: false
+nodeAgent:
+  enabled: false
+watchdog:
+  enabled: false
+gitops:
+  argocd: { enabled: false }
+  flux: { enabled: false }
+
+secrets:
+  # No Slack, no GitHub, no approvals token: nothing here can act or decide.
+  slackBotToken: ""
+  slackSigningSecret: ""
+  githubToken: ""
+  approvalsApiToken: ""
+
+dashboard:
+  enabled: true

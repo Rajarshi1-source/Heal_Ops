@@ -68,12 +68,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # a pod that will not start cannot report why.
         log.error("postgres unreachable at startup; refusing to act until it returns")
 
-    await get_elector().start()
-
     # The loops start on every replica and act only on the leader. A read-only public build has
-    # nothing to plan or verify, so it runs none of them.
+    # nothing to plan or verify, so it runs none of them -- and competes for no Lease, which it
+    # could not take anyway: the public tier has no Kubernetes permissions at all.
+    acting = settings.worker_enabled and not settings.read_only
     worker: Worker | None = None
-    if settings.worker_enabled and not settings.read_only:
+    if acting:
+        await get_elector().start()
         worker = Worker(get_elector(), consumer=identity())
         worker.start()
 
@@ -85,7 +86,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # still works while a successor believes it leads.
         if worker is not None:
             await worker.stop()
-        await get_elector().stop()
+        if acting:
+            await get_elector().stop()
         await redis_client.close()
         await connection.dispose()
         log.info("healops engine stopped")

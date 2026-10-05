@@ -1,0 +1,100 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodCrashLooping",
+    "annotations": {},
+    "container": "crashy-api",
+    "fingerprint": "scenario-crashloop-user-facing-wide",
+    "labels": {
+      "alertname": "KubePodCrashLooping",
+      "container": "crashy-api",
+      "namespace": "chaos",
+      "node": "healops-worker3",
+      "pod": "crashy-api-86f5c9bbd9-2q8k9",
+      "severity": "warning"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker3",
+    "pod": "crashy-api-86f5c9bbd9-2q8k9",
+    "severity": "warning",
+    "starts_at": null,
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "captured_by_chaos_harness",
+  "expected_effect": "require_approval",
+  "expected_runbook": "crashloop_rollback",
+  "format_version": 1,
+  "incident_id": "crashloop-user-facing-wide",
+  "label_note": "A user-facing workload at six replicas: blast radius 6 + 20 = 26 > 25, so a human approves even a reversible rollback. [target captured live; alert synthesised]",
+  "opened_at": null,
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "11",
+      "healops.io/chaos-fixture": "crashy-api",
+      "meta.helm.sh/release-name": "chaos",
+      "meta.helm.sh/release-namespace": "chaos"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": 100,
+        "cpu_request_millis": 20,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 64,
+        "memory_peak_mib": null,
+        "memory_request_mib": 32,
+        "memory_resize_policy": null,
+        "name": "crashy-api",
+        "restart_count": 0
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {
+      "app": "crashy-api",
+      "app.kubernetes.io/managed-by": "Helm",
+      "app.kubernetes.io/name": "crashy-api",
+      "app.kubernetes.io/part-of": "chaos-app",
+      "tier": "frontend"
+    },
+    "name": "crashy-api",
+    "namespace": "chaos",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "crashy-api-6775f995fc-dftvn",
+      "crashy-api-6775f995fc-r8lts",
+      "crashy-api-6775f995fc-r9tsc",
+      "crashy-api-86f4596cc4-7lgwt",
+      "crashy-api-86f4596cc4-7rw2c",
+      "crashy-api-86f4596cc4-gpgch",
+      "crashy-api-86f4596cc4-lt22d",
+      "crashy-api-86f4596cc4-p92ms",
+      "crashy-api-86f4596cc4-pwp9r",
+      "crashy-api-86f4596cc4-rmkfl",
+      "crashy-api-86f4596cc4-sxqvw",
+      "crashy-api-86f4596cc4-vljrv",
+      "crashy-api-86f5c9bbd9-2q8k9",
+      "crashy-api-86f5c9bbd9-6cvnk",
+      "crashy-api-86f5c9bbd9-76x8q",
+      "crashy-api-86f5c9bbd9-9vkrq",
+      "crashy-api-86f5c9bbd9-cr2lc",
+      "crashy-api-86f5c9bbd9-n967v",
+      "crashy-api-86f5c9bbd9-ntlpb",
+      "crashy-api-86f5c9bbd9-t78mm",
+      "crashy-api-86f5c9bbd9-v7ndj"
+    ],
+    "previous_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+    "previous_revision": 10,
+    "previous_template_digest": "273fb8658610479b464e95d399ce5febc665c0845ba42a8e40ea90ca81832b98",
+    "ready_replicas": 6,
+    "replicas": 6,
+    "revision": 11,
+    "server_supports_in_place_resize": true,
+    "template_digest": "b6448e61c52367a990e8072f49ca41f1c63fb476053db6c3783aa4f0ff4ade82"
+  }
+}

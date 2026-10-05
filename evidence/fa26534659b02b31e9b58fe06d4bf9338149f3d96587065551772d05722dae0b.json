@@ -1,0 +1,757 @@
+{
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alertname": "KubeNodeNotReady",
+      "fingerprint": "db02b386b5d06d3c",
+      "id": 143,
+      "namespace": null,
+      "node": "healops-worker2",
+      "pod": null,
+      "received_at": "2026-10-05T05:43:28.452492+00:00",
+      "role": "cause",
+      "severity": "critical",
+      "starts_at": "2026-10-05T05:42:43.996000+00:00",
+      "status": "firing"
+    }
+  ],
+  "approvals": [
+    {
+      "decided_at": "2026-10-05T05:43:35.373877+00:00",
+      "decided_by": "chaos-suite",
+      "execution_id": 4,
+      "expires_at": "2026-10-05T05:53:30.007237+00:00",
+      "incident_id": 35,
+      "reason": "Approval required: this runbook has not yet earned unattended authority in this namespace. Authority is earned per namespace, not granted globally.; Approval required: node-level actions move every pod on the node. Cordon is reversible; the rescheduling is not.; Approval required: this fix has side effects that persist after the undo, so it is not fully reversible.",
+      "requested_at": "2026-10-05T05:43:30.007237+00:00",
+      "status": "approved"
+    }
+  ],
+  "cause_alertname": "KubeNodeNotReady",
+  "cause_scope": "node",
+  "closed_at": null,
+  "correlation_reason": "new_incident",
+  "executions": [
+    {
+      "compensated": false,
+      "detail": "cordoned healops-worker2 and evicted 7 pod(s)",
+      "durability": "ephemeral",
+      "expires_at": "2026-10-05T07:43:35.399849+00:00",
+      "finished_at": "2026-10-05T05:43:36.270891+00:00",
+      "gitops_managed": false,
+      "gitops_paused": false,
+      "id": 4,
+      "mode": "approval",
+      "plan_id": "01a10a96-b001-7012-af07-2de759bc9443",
+      "pr_url": null,
+      "runbook": "node_drain",
+      "signals_before": {
+        "alert_firing": null,
+        "custom": {
+          "pods_left_on_node": 7.0,
+          "unavailable_replicas": 7.0
+        },
+        "memory_usage_ratio": null,
+        "new_alerts": [
+          "KubeNodeNotReady"
+        ],
+        "oom_events": null,
+        "pending_alerts": [
+          "KubeNodeUnreachable",
+          "KubeletInstanceUnreachable"
+        ],
+        "psi_full": null,
+        "restarts": null,
+        "throttle_ratio": null
+      },
+      "started_at": "2026-10-05T05:43:35.558938+00:00",
+      "state_after": {
+        "kind": "Node",
+        "name": "healops-worker2",
+        "ready": false,
+        "taints": [
+          {
+            "effect": "NoExecute",
+            "key": "node.kubernetes.io/unreachable",
+            "value": null
+          },
+          {
+            "effect": "NoSchedule",
+            "key": "node.kubernetes.io/unreachable",
+            "value": null
+          },
+          {
+            "effect": "NoSchedule",
+            "key": "node.kubernetes.io/unschedulable",
+            "value": null
+          }
+        ],
+        "unschedulable": true
+      },
+      "state_before": {
+        "kind": "Node",
+        "name": "healops-worker2",
+        "ready": false,
+        "taints": [
+          {
+            "effect": "NoExecute",
+            "key": "node.kubernetes.io/unreachable",
+            "value": null
+          },
+          {
+            "effect": "NoSchedule",
+            "key": "node.kubernetes.io/unreachable",
+            "value": null
+          }
+        ],
+        "unschedulable": false
+      },
+      "status": "remediated"
+    }
+  ],
+  "format_version": 1,
+  "id": 35,
+  "ledger": [
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "fe99343f779b445f6972be967350cafb18f6d83596450c06f0ab2ac161a41aca",
+      "incident_id": 35,
+      "occurred_at": "2026-10-05T05:43:28.452492+00:00",
+      "payload": {
+        "alertname": "KubeNodeNotReady",
+        "correlation_reason": "new_incident",
+        "created_incident": true,
+        "fingerprint": "db02b386b5d06d3c",
+        "role": "cause",
+        "stage": "ingest",
+        "target_key": "node/healops-worker2"
+      },
+      "prev_hash": "ccb7f30b207337b6c2c460309cff23ef8894d940b38d9715e7e6244cbffc28cc",
+      "seq": 130
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "e9512cff3ce658738721e5032521ebfa73545f4891ce2ecde13357d1de2660af",
+      "incident_id": 35,
+      "occurred_at": "2026-10-05T05:43:30.007237+00:00",
+      "payload": {
+        "alertname": "KubeNodeNotReady",
+        "input": {
+          "cause_alert": {
+            "alertname": "KubeNodeNotReady",
+            "annotations": {
+              "description": "The Ready condition on healops-worker2 has been false for 3m. Pod-level alerts on this node are symptoms and are inhibited in Alertmanager, then correlated as evidence in the engine.",
+              "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#node_drain",
+              "summary": "Node healops-worker2 has been NotReady for 3m"
+            },
+            "container": null,
+            "fingerprint": "db02b386b5d06d3c",
+            "labels": {
+              "alertname": "KubeNodeNotReady",
+              "healops_runbook": "node_drain",
+              "node": "healops-worker2",
+              "prometheus": "monitoring/kps-prometheus",
+              "severity": "critical"
+            },
+            "namespace": null,
+            "node": "healops-worker2",
+            "pod": null,
+            "severity": "critical",
+            "starts_at": "2026-10-05T05:42:43.996000+00:00",
+            "status": "firing"
+          },
+          "cause_scope": "node",
+          "correlation_reason": "new_incident",
+          "expected_effect": null,
+          "expected_runbook": null,
+          "format_version": 1,
+          "incident_id": "35",
+          "label_note": null,
+          "opened_at": "2026-10-05T05:43:28.452492+00:00",
+          "symptom_alerts": [],
+          "target": {
+            "annotations": {
+              "node.alpha.kubernetes.io/ttl": "0",
+              "volumes.kubernetes.io/controller-managed-attach-detach": "true"
+            },
+            "autoscaler": null,
+            "containers": [],
+            "drained_workloads": [
+              "chaos/Deployment/cpu-burner",
+              "chaos/Deployment/crashy-api",
+              "chaos/Deployment/hungry-worker",
+              "chaos/Deployment/log-spammer"
+            ],
+            "gitops_manager": "unmanaged",
+            "kind": "Node",
+            "labels": {
+              "beta.kubernetes.io/arch": "amd64",
+              "beta.kubernetes.io/os": "linux",
+              "healops.io/pool": "general",
+              "kubernetes.io/arch": "amd64",
+              "kubernetes.io/hostname": "healops-worker2",
+              "kubernetes.io/os": "linux"
+            },
+            "name": "healops-worker2",
+            "namespace": null,
+            "node": "healops-worker2",
+            "node_state": {
+              "allocatable_cpu_millis": 18000,
+              "allocatable_memory_mib": 7665,
+              "name": "healops-worker2",
+              "pod_count": 7,
+              "ready": false,
+              "requested_cpu_millis": 200,
+              "requested_memory_mib": 320,
+              "schedulable": true
+            },
+            "peer_nodes": [
+              {
+                "allocatable_cpu_millis": 18000,
+                "allocatable_memory_mib": 7665,
+                "name": "healops-worker",
+                "pod_count": 0,
+                "ready": true,
+                "requested_cpu_millis": 590,
+                "requested_memory_mib": 2090,
+                "schedulable": true
+              },
+              {
+                "allocatable_cpu_millis": 18000,
+                "allocatable_memory_mib": 7665,
+                "name": "healops-worker3",
+                "pod_count": 0,
+                "ready": true,
+                "requested_cpu_millis": 100,
+                "requested_memory_mib": 50,
+                "schedulable": true
+              }
+            ],
+            "pods": [
+              "chaos/cpu-burner-5879f48bb8-2cvvx",
+              "chaos/cpu-burner-5879f48bb8-52tq4",
+              "chaos/crashy-api-6775f995fc-hjqbs",
+              "chaos/crashy-api-6775f995fc-rmlvs",
+              "chaos/crashy-api-6775f995fc-x66wq",
+              "chaos/hungry-worker-7ff88d694d-gfcds",
+              "chaos/log-spammer-74647d66c7-89v7q"
+            ],
+            "previous_image": null,
+            "previous_revision": null,
+            "previous_template_digest": null,
+            "ready_replicas": 0,
+            "replicas": 1,
+            "revision": null,
+            "server_supports_in_place_resize": true,
+            "template_digest": null
+          }
+        },
+        "runbook": "node_drain",
+        "target": "-/Node/healops-worker2"
+      },
+      "prev_hash": "fe99343f779b445f6972be967350cafb18f6d83596450c06f0ab2ac161a41aca",
+      "seq": 131
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan",
+      "execution_id": null,
+      "hash": "66887fd57904f0c10bb2ebf3e0fee2173a2c90541242623cd0aa2a875856608f",
+      "incident_id": 35,
+      "occurred_at": "2026-10-05T05:43:30.007237+00:00",
+      "payload": {
+        "actions": [
+          {
+            "body": {
+              "spec": {
+                "unschedulable": true
+              }
+            },
+            "name": "healops-worker2",
+            "namespace": null,
+            "resource": "v1/Node",
+            "subresource": null,
+            "verb": "cordon"
+          },
+          {
+            "body": {},
+            "name": "cpu-burner-5879f48bb8-2cvvx",
+            "namespace": "chaos",
+            "resource": "v1/Pod",
+            "subresource": "eviction",
+            "verb": "evict"
+          },
+          {
+            "body": {},
+            "name": "cpu-burner-5879f48bb8-52tq4",
+            "namespace": "chaos",
+            "resource": "v1/Pod",
+            "subresource": "eviction",
+            "verb": "evict"
+          },
+          {
+            "body": {},
+            "name": "crashy-api-6775f995fc-hjqbs",
+            "namespace": "chaos",
+            "resource": "v1/Pod",
+            "subresource": "eviction",
+            "verb": "evict"
+          },
+          {
+            "body": {},
+            "name": "crashy-api-6775f995fc-rmlvs",
+            "namespace": "chaos",
+            "resource": "v1/Pod",
+            "subresource": "eviction",
+            "verb": "evict"
+          },
+          {
+            "body": {},
+            "name": "crashy-api-6775f995fc-x66wq",
+            "namespace": "chaos",
+            "resource": "v1/Pod",
+            "subresource": "eviction",
+            "verb": "evict"
+          },
+          {
+            "body": {},
+            "name": "hungry-worker-7ff88d694d-gfcds",
+            "namespace": "chaos",
+            "resource": "v1/Pod",
+            "subresource": "eviction",
+            "verb": "evict"
+          },
+          {
+            "body": {},
+            "name": "log-spammer-74647d66c7-89v7q",
+            "namespace": "chaos",
+            "resource": "v1/Pod",
+            "subresource": "eviction",
+            "verb": "evict"
+          }
+        ],
+        "blast_radius": {
+          "namespaces": [
+            "chaos"
+          ],
+          "nodes": 1,
+          "pods": 7,
+          "user_facing": false
+        },
+        "blast_radius_score": 17,
+        "compensation": [
+          {
+            "body": {
+              "spec": {
+                "unschedulable": false
+              }
+            },
+            "name": "healops-worker2",
+            "namespace": null,
+            "resource": "v1/Node",
+            "subresource": null,
+            "verb": "uncordon"
+          }
+        ],
+        "confidence": 0.9,
+        "cost_delta_inr_month": 0.0,
+        "durability": "ephemeral",
+        "expected_signal": {
+          "alert_should_clear": "",
+          "queries": {
+            "pods_left_on_node": "count(kube_pod_info{node=\"healops-worker2\",created_by_kind!=\"DaemonSet\"} unless on (namespace, pod) kube_pod_deletion_timestamp) or (max(up{job=\"kube-state-metrics\"}) * 0)",
+            "unavailable_replicas": "(sum(kube_deployment_status_replicas_unavailable{namespace=\"chaos\",deployment=~\"cpu-burner|crashy-api|hungry-worker|log-spammer\"}) or (max(up{job=\"kube-state-metrics\"}) * 0))"
+          },
+          "thresholds": {
+            "pods_left_on_node": 0.0,
+            "unavailable_replicas": 0.0
+          },
+          "window_seconds": 300
+        },
+        "gitops_managed": false,
+        "incident_id": "35",
+        "plan_id": "",
+        "planner_version": "0",
+        "refusal_reason": null,
+        "reversibility": "partially_reversible",
+        "runbook": "node_drain",
+        "summary": "cordon healops-worker2 and evict 7 pod(s) onto 2 healthy node(s) (need 240m / 384Mi, have 35310m / 13190Mi)",
+        "target_kind": "Node",
+        "target_name": "healops-worker2",
+        "target_namespace": null,
+        "ttl_seconds": 7200
+      },
+      "prev_hash": "e9512cff3ce658738721e5032521ebfa73545f4891ce2ecde13357d1de2660af",
+      "seq": 132
+    },
+    {
+      "actor": "healops",
+      "event_type": "policy",
+      "execution_id": null,
+      "hash": "0560b1b528c09cfb4c9e1abeb0f58f6d2e9ad67fb40bf6406b5f0c2af12c0b5d",
+      "incident_id": 35,
+      "occurred_at": "2026-10-05T05:43:30.007237+00:00",
+      "payload": {
+        "decision": "require_approval",
+        "messages": [
+          "Approval required: this runbook has not yet earned unattended authority in this namespace. Authority is earned per namespace, not granted globally.",
+          "Approval required: node-level actions move every pod on the node. Cordon is reversible; the rescheduling is not.",
+          "Approval required: this fix has side effects that persist after the undo, so it is not fully reversible."
+        ],
+        "reasons": [
+          "approve-not-promoted",
+          "approve-node-scoped",
+          "approve-partially-reversible"
+        ]
+      },
+      "prev_hash": "66887fd57904f0c10bb2ebf3e0fee2173a2c90541242623cd0aa2a875856608f",
+      "seq": 133
+    },
+    {
+      "actor": "healops",
+      "event_type": "approve",
+      "execution_id": 4,
+      "hash": "9cba6a73834e82a9c61cd12ff4fac000154d9af6ca6818bbbed094fb43cb6816",
+      "incident_id": 35,
+      "occurred_at": "2026-10-05T05:43:30.007237+00:00",
+      "payload": {
+        "messages": [
+          "Approval required: this runbook has not yet earned unattended authority in this namespace. Authority is earned per namespace, not granted globally.",
+          "Approval required: node-level actions move every pod on the node. Cordon is reversible; the rescheduling is not.",
+          "Approval required: this fix has side effects that persist after the undo, so it is not fully reversible."
+        ],
+        "plan_id": "01a10a96-b001-7012-af07-2de759bc9443",
+        "reasons": [
+          "approve-not-promoted",
+          "approve-node-scoped",
+          "approve-partially-reversible"
+        ],
+        "stage": "requested"
+      },
+      "prev_hash": "0560b1b528c09cfb4c9e1abeb0f58f6d2e9ad67fb40bf6406b5f0c2af12c0b5d",
+      "seq": 134
+    },
+    {
+      "actor": "chaos-suite",
+      "event_type": "approve",
+      "execution_id": 4,
+      "hash": "48f5b91a335cc5aa39bb4a02ba64e4a06ef53236ceee01cda9f8b634c2c99201",
+      "incident_id": 35,
+      "occurred_at": "2026-10-05T05:43:35.373877+00:00",
+      "payload": {
+        "decided_by": "chaos-suite",
+        "execution_id": 4,
+        "stage": "granted"
+      },
+      "prev_hash": "9cba6a73834e82a9c61cd12ff4fac000154d9af6ca6818bbbed094fb43cb6816",
+      "seq": 135
+    },
+    {
+      "actor": "healops",
+      "event_type": "execute",
+      "execution_id": 4,
+      "hash": "13ebc4424b7446f16622d7f09a5f4630727a4522fdfaca8951ef4b00f959bceb",
+      "incident_id": 35,
+      "occurred_at": "2026-10-05T05:43:35.399849+00:00",
+      "payload": {
+        "detail": "cordoned healops-worker2 and evicted 7 pod(s)",
+        "ok": true,
+        "plan_id": "01a10a96-b001-7012-af07-2de759bc9443",
+        "state_after": {
+          "kind": "Node",
+          "name": "healops-worker2",
+          "ready": false,
+          "taints": [
+            {
+              "effect": "NoExecute",
+              "key": "node.kubernetes.io/unreachable",
+              "value": null
+            },
+            {
+              "effect": "NoSchedule",
+              "key": "node.kubernetes.io/unreachable",
+              "value": null
+            },
+            {
+              "effect": "NoSchedule",
+              "key": "node.kubernetes.io/unschedulable",
+              "value": null
+            }
+          ],
+          "unschedulable": true
+        },
+        "state_before": {
+          "kind": "Node",
+          "name": "healops-worker2",
+          "ready": false,
+          "taints": [
+            {
+              "effect": "NoExecute",
+              "key": "node.kubernetes.io/unreachable",
+              "value": null
+            },
+            {
+              "effect": "NoSchedule",
+              "key": "node.kubernetes.io/unreachable",
+              "value": null
+            }
+          ],
+          "unschedulable": false
+        }
+      },
+      "prev_hash": "48f5b91a335cc5aa39bb4a02ba64e4a06ef53236ceee01cda9f8b634c2c99201",
+      "seq": 136
+    },
+    {
+      "actor": "healops",
+      "event_type": "verify",
+      "execution_id": 4,
+      "hash": "2aee33e7c9d9f7e6c3b4b22eacb44ce7f36de29360b525d97da716233b3352e0",
+      "incident_id": 35,
+      "occurred_at": "2026-10-05T05:48:45.985137+00:00",
+      "payload": {
+        "alert_cleared": null,
+        "new_alerts": [],
+        "outcome": "remediated",
+        "reasons": [
+          "signals within thresholds, no new alerts on the target"
+        ],
+        "signals_after": {
+          "custom:pods_left_on_node": 0.0,
+          "custom:unavailable_replicas": 0.0,
+          "memory_usage_ratio": null,
+          "oom_events": null,
+          "psi_full": null,
+          "restarts": null,
+          "throttle_ratio": null
+        },
+        "signals_before": {
+          "custom:pods_left_on_node": 7.0,
+          "custom:unavailable_replicas": 7.0,
+          "memory_usage_ratio": null,
+          "oom_events": null,
+          "psi_full": null,
+          "restarts": null,
+          "throttle_ratio": null
+        }
+      },
+      "prev_hash": "293dbfccc86489cf55ea1de14ab0b8ee8b0fcc039f2474bd37dc65e8901f459e",
+      "seq": 140
+    }
+  ],
+  "mode": "approval",
+  "namespace": null,
+  "opened_at": "2026-10-05T05:43:28.452492+00:00",
+  "outcome": "remediated",
+  "outcome_detail": "remediated",
+  "plans": [
+    {
+      "actions": [
+        {
+          "body": {
+            "spec": {
+              "unschedulable": true
+            }
+          },
+          "name": "healops-worker2",
+          "namespace": null,
+          "resource": "v1/Node",
+          "subresource": null,
+          "verb": "cordon"
+        },
+        {
+          "body": {},
+          "name": "cpu-burner-5879f48bb8-2cvvx",
+          "namespace": "chaos",
+          "resource": "v1/Pod",
+          "subresource": "eviction",
+          "verb": "evict"
+        },
+        {
+          "body": {},
+          "name": "cpu-burner-5879f48bb8-52tq4",
+          "namespace": "chaos",
+          "resource": "v1/Pod",
+          "subresource": "eviction",
+          "verb": "evict"
+        },
+        {
+          "body": {},
+          "name": "crashy-api-6775f995fc-hjqbs",
+          "namespace": "chaos",
+          "resource": "v1/Pod",
+          "subresource": "eviction",
+          "verb": "evict"
+        },
+        {
+          "body": {},
+          "name": "crashy-api-6775f995fc-rmlvs",
+          "namespace": "chaos",
+          "resource": "v1/Pod",
+          "subresource": "eviction",
+          "verb": "evict"
+        },
+        {
+          "body": {},
+          "name": "crashy-api-6775f995fc-x66wq",
+          "namespace": "chaos",
+          "resource": "v1/Pod",
+          "subresource": "eviction",
+          "verb": "evict"
+        },
+        {
+          "body": {},
+          "name": "hungry-worker-7ff88d694d-gfcds",
+          "namespace": "chaos",
+          "resource": "v1/Pod",
+          "subresource": "eviction",
+          "verb": "evict"
+        },
+        {
+          "body": {},
+          "name": "log-spammer-74647d66c7-89v7q",
+          "namespace": "chaos",
+          "resource": "v1/Pod",
+          "subresource": "eviction",
+          "verb": "evict"
+        }
+      ],
+      "blast_radius": {
+        "namespaces": [
+          "chaos"
+        ],
+        "nodes": 1,
+        "pods": 7,
+        "score": 17,
+        "user_facing": false
+      },
+      "compensation": [
+        {
+          "body": {
+            "spec": {
+              "unschedulable": false
+            }
+          },
+          "name": "healops-worker2",
+          "namespace": null,
+          "resource": "v1/Node",
+          "subresource": null,
+          "verb": "uncordon"
+        }
+      ],
+      "confidence": 0.9,
+      "cost_delta_inr_month": 0.0,
+      "created_at": "2026-10-05T05:43:30.007237+00:00",
+      "durability": "ephemeral",
+      "expected_signal": {
+        "alert_should_clear": "",
+        "queries": {
+          "pods_left_on_node": "count(kube_pod_info{node=\"healops-worker2\",created_by_kind!=\"DaemonSet\"} unless on (namespace, pod) kube_pod_deletion_timestamp) or (max(up{job=\"kube-state-metrics\"}) * 0)",
+          "unavailable_replicas": "(sum(kube_deployment_status_replicas_unavailable{namespace=\"chaos\",deployment=~\"cpu-burner|crashy-api|hungry-worker|log-spammer\"}) or (max(up{job=\"kube-state-metrics\"}) * 0))"
+        },
+        "thresholds": {
+          "pods_left_on_node": 0.0,
+          "unavailable_replicas": 0.0
+        },
+        "window_seconds": 300
+      },
+      "id": "01a10a96-b001-7012-af07-2de759bc9443",
+      "planner_version": "1.0.0",
+      "policy_decision": "require_approval",
+      "policy_reasons": [
+        "approve-not-promoted",
+        "approve-node-scoped",
+        "approve-partially-reversible"
+      ],
+      "refusal_reason": null,
+      "reversibility": "partially_reversible",
+      "runbook": "node_drain",
+      "summary": "cordon healops-worker2 and evict 7 pod(s) onto 2 healthy node(s) (need 240m / 384Mi, have 35310m / 13190Mi)",
+      "target_key": "-/Node/healops-worker2",
+      "ttl_seconds": 7200
+    }
+  ],
+  "runbook": "node_drain",
+  "state": "remediated",
+  "summary": "cordon healops-worker2 and evict 7 pod(s) onto 2 healthy node(s) (need 240m / 384Mi, have 35310m / 13190Mi)",
+  "target_key": "node/healops-worker2",
+  "trail": [
+    {
+      "detail": "new_incident",
+      "label": "1 alert(s)",
+      "stage": "correlate",
+      "state": "passed"
+    },
+    {
+      "detail": "cordon healops-worker2 and evict 7 pod(s) onto 2 healthy node(s) (need 240m / 384Mi, have 35310m / 13190Mi)",
+      "label": "node_drain",
+      "stage": "plan",
+      "state": "passed"
+    },
+    {
+      "detail": "approve-not-promoted, approve-node-scoped, approve-partially-reversible",
+      "label": "approval required",
+      "stage": "policy",
+      "state": "passed"
+    },
+    {
+      "detail": "chaos-suite",
+      "label": "approved",
+      "stage": "gate",
+      "state": "passed"
+    },
+    {
+      "detail": "cordoned healops-worker2 and evicted 7 pod(s)",
+      "label": "applied",
+      "stage": "execute",
+      "state": "passed"
+    },
+    {
+      "detail": "signals within thresholds, no new alerts on the target",
+      "label": "remediated",
+      "stage": "verify",
+      "state": "passed"
+    },
+    {
+      "detail": "",
+      "label": "remediated",
+      "stage": "outcome",
+      "state": "passed"
+    }
+  ],
+  "verifications": [
+    {
+      "alert_cleared": null,
+      "checked_at": "2026-10-05T05:48:45.985137+00:00",
+      "compensated": false,
+      "execution_id": 4,
+      "outcome": "remediated",
+      "reasons": [
+        "signals within thresholds, no new alerts on the target"
+      ],
+      "signals_after": {
+        "custom:pods_left_on_node": 0.0,
+        "custom:unavailable_replicas": 0.0,
+        "memory_usage_ratio": null,
+        "oom_events": null,
+        "psi_full": null,
+        "restarts": null,
+        "throttle_ratio": null
+      },
+      "signals_before": {
+        "custom:pods_left_on_node": 7.0,
+        "custom:unavailable_replicas": 7.0,
+        "memory_usage_ratio": null,
+        "oom_events": null,
+        "psi_full": null,
+        "restarts": null,
+        "throttle_ratio": null
+      },
+      "window_seconds": 300
+    }
+  ]
+}

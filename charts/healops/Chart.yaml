@@ -1,0 +1,14 @@
+apiVersion: v2
+name: healops
+description: >-
+  Self-healing Kubernetes remediation with a safety envelope: correlate, plan, gate, act, verify,
+  compensate -- every step on a hash-chained ledger.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+# In-place pod resize is GA in 1.35, which runbook 4 depends on; 1.35+ also mandates cgroup v2.
+kubeVersion: ">=1.35.0-0"
+keywords: [remediation, self-healing, sre, kubernetes]
+home: https://github.com/Rajarshi1-source/Heal_Ops
+sources:
+  - https://github.com/Rajarshi1-source/Heal_Ops

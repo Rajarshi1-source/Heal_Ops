@@ -16,7 +16,8 @@ compensation restores only what can be restored.
 
 **What recovery means here.** Draining does not make a node Ready, so `KubeNodeNotReady` is not
 expected to clear and the plan makes no claim about it. Recovery is the workloads running elsewhere:
-nothing movable left on the node, and no unavailable replicas in the namespaces that were moved.
+nothing movable left on the node, and no unavailable replicas in the workloads that were moved --
+those workloads, not their whole namespaces, which also hold things broken before the drain began.
 Those are committed as the plan's own queries before anything is touched.
 """
 
@@ -119,7 +120,7 @@ class NodeDrain(Runbook):
             durability=Durability.EPHEMERAL,
             ttl_seconds=CORDON_TTL_SECONDS,
             blast_radius=BlastRadius(pods=len(moved), nodes=1, namespaces=namespaces),
-            expected_signal=_recovery(target.name, namespaces),
+            expected_signal=_recovery(target.name, namespaces, target.drained_workloads),
             # High: a NotReady node is unambiguous, and capacity was checked rather than assumed.
             confidence=0.90,
             summary=(
@@ -195,21 +196,34 @@ def _free(peers: list[NodeState]) -> tuple[int, int]:
     )
 
 
-def _recovery(node: str, namespaces: tuple[str, ...]) -> ExpectedSignal:
+def _recovery(
+    node: str, namespaces: tuple[str, ...], workloads: tuple[str, ...] = ()
+) -> ExpectedSignal:
     """Recovery committed before acting: the work left the node, and it is running elsewhere.
 
     The `or (up * 0)` arms turn "no series" into 0 only while kube-state-metrics is being scraped.
     A bare `or vector(0)` would read a dead exporter as a perfectly drained node -- a missing
     signal must never become a healthy one.
+
+    A pod already being deleted is not "left": it is leaving. On a node whose kubelet is gone an
+    evicted pod stays Terminating until the node returns, so counting it would revert every drain
+    of a genuinely dead node. Its replacement is what `unavailable_replicas` judges. A pod a PDB
+    kept in place has no deletion timestamp, so it still counts -- as it must.
     """
     ksm_up = 'max(up{job="kube-state-metrics"}) * 0'
     queries = {
         "pods_left_on_node": (
-            f'count(kube_pod_info{{node="{node}",created_by_kind!="DaemonSet"}}) or ({ksm_up})'
+            f'count(kube_pod_info{{node="{node}",created_by_kind!="DaemonSet"}} '
+            f"unless on (namespace, pod) kube_pod_deletion_timestamp) or ({ksm_up})"
         ),
     }
     thresholds = {"pods_left_on_node": 0.0}
-    if namespaces:
+    if workloads:
+        queries["unavailable_replicas"] = _unavailable(workloads, ksm_up)
+        thresholds["unavailable_replicas"] = 0.0
+    elif namespaces:
+        # A bundle captured before the moved workloads were recorded: the namespace-wide reading,
+        # which can only err towards "not recovered", never towards a false success.
         selector = "|".join(namespaces)
         queries["unavailable_replicas"] = (
             f'sum(kube_deployment_status_replicas_unavailable{{namespace=~"{selector}"}}) '
@@ -223,6 +237,37 @@ def _recovery(node: str, namespaces: tuple[str, ...]) -> ExpectedSignal:
         thresholds=thresholds,
         window_seconds=300,
     )
+
+
+def _unavailable(workloads: tuple[str, ...], ksm_up: str) -> str:
+    """Unavailable replicas across exactly the controllers whose pods were moved.
+
+    Scoped to the moved workloads, not their namespaces: a namespace also holds things that were
+    broken before the drain and have nothing to do with it, and judging the drain on those would
+    revert a drain that worked. One term per namespace and kind, each guarded so a dead exporter
+    leaves the whole sum empty -- `inconclusive` -- rather than reading as zero.
+    """
+    grouped: dict[tuple[str, str], list[str]] = {}
+    for entry in workloads:
+        namespace, kind, name = entry.split("/", 2)
+        grouped.setdefault((namespace, kind), []).append(name)
+
+    terms = []
+    for (namespace, kind), names in sorted(grouped.items()):
+        pattern = "|".join(sorted(names))
+        if kind == "Deployment":
+            expr = (
+                "sum(kube_deployment_status_replicas_unavailable"
+                f'{{namespace="{namespace}",deployment=~"{pattern}"}})'
+            )
+        else:
+            selector = f'{{namespace="{namespace}",statefulset=~"{pattern}"}}'
+            expr = (
+                f"sum(kube_statefulset_replicas{selector} - "
+                f"kube_statefulset_status_replicas_ready{selector})"
+            )
+        terms.append(f"({expr} or ({ksm_up}))")
+    return " + ".join(terms)
 
 
 registry.register(NodeDrain())

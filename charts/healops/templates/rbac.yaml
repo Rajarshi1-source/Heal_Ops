@@ -1,0 +1,153 @@
+{{- if .Values.rbac.create }}
+# Least privilege: every verb below maps to a runbook (or an engine function) that can be named,
+# and what is ABSENT is the point -- no delete on persistentvolumeclaims, no secret reads outside
+# HealOps' own namespace, no wildcard verbs, nothing cluster-admin. The destructive actions that
+# are not here are also denied by the policy file: defence in depth.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: healops-engine
+  labels: {{- include "healops.labels" . | nindent 4 }}
+rules:
+  # Runbooks 1 and 3: rollback (template patch) and scale-up; state capture for every plan.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "patch"]
+  # Runbook 1: revision history -- the previous ReplicaSet is what `rollout undo` restores.
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"]
+  # Read only, and only so a stateful workload's alert can be REFUSED on the record: no runbook
+  # acts on a StatefulSet and policy denies them. Without this the refusal would be a "not found".
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get"]
+  # State capture and verification; runbook 5 lists every pod on the node being drained.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # Runbook 4: the in-place memory bump. Patch on the subresource only -- never the pod spec.
+  - apiGroups: [""]
+    resources: ["pods/resize"]
+    verbs: ["patch"]
+  # Runbook 5: drain through the Eviction API, so PodDisruptionBudgets are honoured.
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  # Runbook 5: cordon and uncordon; runbook 5's capacity precheck reads every node.
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch", "patch"]
+  # Runbook 3: an HPA owns `spec.replicas`, so the runbook adjusts the HPA, not the Deployment.
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "patch"]
+  # A Kubernetes-native trail alongside the ledger.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  {{- if .Values.gitops.flux.enabled }}
+  # GitOps: suspend the one Kustomization that owns the target, for the mitigation window.
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "patch"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: healops-engine
+  labels: {{- include "healops.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: healops-engine
+subjects:
+  - kind: ServiceAccount
+    name: healops-engine
+    namespace: {{ .Release.Namespace }}
+---
+# Namespaced to HealOps' own namespace: leader election, and the node-agent Jobs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: healops-engine
+  labels: {{- include "healops.labels" . | nindent 4 }}
+rules:
+  # Two replicas, one leader.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+  {{- if .Values.nodeAgent.enabled }}
+  # Runbook 2: the node agent runs as a Job on the node under pressure, and reports in its log.
+  - apiGroups: ["batch"]
+    resources: ["jobs", "jobs/status"]
+    verbs: ["create", "get", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: healops-engine
+  labels: {{- include "healops.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: healops-engine
+subjects:
+  - kind: ServiceAccount
+    name: healops-engine
+    namespace: {{ .Release.Namespace }}
+{{- if .Values.gitops.argocd.enabled }}
+---
+# GitOps: add and remove one field-scoped ignoreDifferences entry on the owning Application.
+# Scoped to Argo CD's namespace -- HealOps cannot touch Applications anywhere else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: healops-gitops-pause
+  namespace: {{ .Values.gitops.argocd.namespace }}
+  labels: {{- include "healops.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: healops-gitops-pause
+  namespace: {{ .Values.gitops.argocd.namespace }}
+  labels: {{- include "healops.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: healops-gitops-pause
+subjects:
+  - kind: ServiceAccount
+    name: healops-engine
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: healops-engine
+  labels: {{- include "healops.labels" . | nindent 4 }}
+{{- if .Values.nodeAgent.enabled }}
+---
+# The node agent needs no API access at all: its token is not even mounted.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: healops-node-agent
+  labels: {{- include "healops.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+{{- end }}

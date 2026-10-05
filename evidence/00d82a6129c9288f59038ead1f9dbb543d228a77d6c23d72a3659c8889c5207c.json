@@ -1,0 +1,513 @@
+{
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alertname": "KubePodOOMKilled",
+      "fingerprint": "e595ad4b47bd70a5",
+      "id": 167,
+      "namespace": "chaos",
+      "node": "healops-worker2",
+      "pod": "hungry-worker-67c8c4f7d6-ffd8f",
+      "received_at": "2026-10-05T05:55:58.375905+00:00",
+      "role": "cause",
+      "severity": "critical",
+      "starts_at": "2026-10-05T05:55:13.996000+00:00",
+      "status": "firing"
+    }
+  ],
+  "approvals": [],
+  "cause_alertname": "KubePodOOMKilled",
+  "cause_scope": "workload",
+  "closed_at": null,
+  "correlation_reason": "new_incident",
+  "executions": [
+    {
+      "compensated": false,
+      "detail": "raised hungry-worker memory 256Mi -> 384Mi in place; restartCount unchanged at 2",
+      "durability": "ephemeral",
+      "expires_at": "2026-10-05T07:55:58.493511+00:00",
+      "finished_at": "2026-10-05T05:56:00.779563+00:00",
+      "gitops_managed": false,
+      "gitops_paused": false,
+      "id": 5,
+      "mode": "auto",
+      "plan_id": "01a10aa2-1bcc-781a-821a-65ebcdfcf766",
+      "pr_url": null,
+      "runbook": "oom_memory_bump",
+      "signals_before": {
+        "alert_firing": true,
+        "custom": {},
+        "memory_usage_ratio": null,
+        "new_alerts": [
+          "KubePodOOMKilled"
+        ],
+        "oom_events": 2.2396239623962395,
+        "pending_alerts": [
+          "CPUThrottlingHigh",
+          "KubePodNotReady"
+        ],
+        "psi_full": 0.00016994408613594438,
+        "restarts": 2,
+        "throttle_ratio": 0.0
+      },
+      "started_at": "2026-10-05T05:55:58.717234+00:00",
+      "state_after": {
+        "container": "hungry-worker",
+        "memory_limit_mib": 384,
+        "pod": "hungry-worker-67c8c4f7d6-ffd8f",
+        "restart_count": 2
+      },
+      "state_before": {
+        "container": "hungry-worker",
+        "memory_limit_mib": 256,
+        "pod": "hungry-worker-67c8c4f7d6-ffd8f",
+        "restart_count": 2
+      },
+      "status": "remediated"
+    }
+  ],
+  "format_version": 1,
+  "id": 41,
+  "ledger": [
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "1692439b86ddff57d6b2aefbf05866f62f8160e854fe674b2243487136cba64f",
+      "incident_id": 41,
+      "occurred_at": "2026-10-05T05:55:58.375905+00:00",
+      "payload": {
+        "alertname": "KubePodOOMKilled",
+        "correlation_reason": "new_incident",
+        "created_incident": true,
+        "fingerprint": "e595ad4b47bd70a5",
+        "role": "cause",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/hungry-worker"
+      },
+      "prev_hash": "2ec176dcb81a91888ec33d2917d51142968a22a29a1153ba486ca1c5b8d220a4",
+      "seq": 158
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "01cb7faa9e1fbcf4df76c154719837c347fd4d3b93fe0d48d04696647b449bbd",
+      "incident_id": 41,
+      "occurred_at": "2026-10-05T05:55:58.493511+00:00",
+      "payload": {
+        "alertname": "KubePodOOMKilled",
+        "input": {
+          "cause_alert": {
+            "alertname": "KubePodOOMKilled",
+            "annotations": {
+              "description": "chaos/hungry-worker-67c8c4f7d6-ffd8f container hungry-worker recorded an OOM event in the last 10m. Counted from container_oom_events_total, or where cAdvisor cannot count, from restarts whose last termination was an OOM kill.",
+              "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#oom_memory_bump",
+              "summary": "Container hungry-worker was OOM killed"
+            },
+            "container": "hungry-worker",
+            "fingerprint": "e595ad4b47bd70a5",
+            "labels": {
+              "alertname": "KubePodOOMKilled",
+              "container": "hungry-worker",
+              "healops_runbook": "oom_memory_bump",
+              "namespace": "chaos",
+              "node": "healops-worker2",
+              "pod": "hungry-worker-67c8c4f7d6-ffd8f",
+              "prometheus": "monitoring/kps-prometheus",
+              "severity": "critical"
+            },
+            "namespace": "chaos",
+            "node": "healops-worker2",
+            "pod": "hungry-worker-67c8c4f7d6-ffd8f",
+            "severity": "critical",
+            "starts_at": "2026-10-05T05:55:13.996000+00:00",
+            "status": "firing"
+          },
+          "cause_scope": "workload",
+          "correlation_reason": "new_incident",
+          "expected_effect": null,
+          "expected_runbook": null,
+          "format_version": 1,
+          "incident_id": "41",
+          "label_note": null,
+          "opened_at": "2026-10-05T05:55:58.375905+00:00",
+          "symptom_alerts": [],
+          "target": {
+            "annotations": {
+              "deployment.kubernetes.io/revision": "2",
+              "healops.io/chaos-fixture": "hungry-worker",
+              "meta.helm.sh/release-name": "chaos",
+              "meta.helm.sh/release-namespace": "chaos"
+            },
+            "autoscaler": null,
+            "containers": [
+              {
+                "cpu_limit_millis": 100,
+                "cpu_request_millis": 20,
+                "cpu_resize_policy": "NotRequired",
+                "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+                "memory_limit_mib": 256,
+                "memory_peak_mib": 143.1953125,
+                "memory_request_mib": 128,
+                "memory_resize_policy": "NotRequired",
+                "name": "hungry-worker",
+                "restart_count": 2
+              }
+            ],
+            "drained_workloads": [],
+            "gitops_manager": "unmanaged",
+            "kind": "Deployment",
+            "labels": {
+              "app": "hungry-worker",
+              "app.kubernetes.io/managed-by": "Helm",
+              "app.kubernetes.io/name": "hungry-worker",
+              "app.kubernetes.io/part-of": "chaos-app"
+            },
+            "name": "hungry-worker",
+            "namespace": "chaos",
+            "node": null,
+            "node_state": null,
+            "peer_nodes": [],
+            "pods": [
+              "hungry-worker-67c8c4f7d6-ffd8f"
+            ],
+            "previous_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+            "previous_revision": 1,
+            "previous_template_digest": "d5c5c041643b04ace7375888f5143e557d0f169d21be158d452ac738e5a6fa30",
+            "ready_replicas": 1,
+            "replicas": 1,
+            "revision": 2,
+            "server_supports_in_place_resize": true,
+            "template_digest": "5fee679c925df230a19c30dce1bbd08bfe323292be2761555b69785e5fe1a313"
+          }
+        },
+        "runbook": "oom_memory_bump",
+        "target": "chaos/Deployment/hungry-worker"
+      },
+      "prev_hash": "1692439b86ddff57d6b2aefbf05866f62f8160e854fe674b2243487136cba64f",
+      "seq": 159
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan",
+      "execution_id": null,
+      "hash": "8d4824622b7e35a6110e73a08fd30fddb3a9b8a2fef697997190f76e42ce6e73",
+      "incident_id": 41,
+      "occurred_at": "2026-10-05T05:55:58.493511+00:00",
+      "payload": {
+        "actions": [
+          {
+            "body": {
+              "spec": {
+                "containers": [
+                  {
+                    "name": "hungry-worker",
+                    "resources": {
+                      "limits": {
+                        "memory": "384Mi"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "name": "hungry-worker-67c8c4f7d6-ffd8f",
+            "namespace": "chaos",
+            "resource": "v1/Pod",
+            "subresource": "resize",
+            "verb": "resize"
+          }
+        ],
+        "blast_radius": {
+          "namespaces": [
+            "chaos"
+          ],
+          "nodes": 0,
+          "pods": 1,
+          "user_facing": false
+        },
+        "blast_radius_score": 1,
+        "compensation": [
+          {
+            "body": {
+              "spec": {
+                "containers": [
+                  {
+                    "name": "hungry-worker",
+                    "resources": {
+                      "limits": {
+                        "memory": "256Mi"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "name": "hungry-worker-67c8c4f7d6-ffd8f",
+            "namespace": "chaos",
+            "resource": "v1/Pod",
+            "subresource": "resize",
+            "verb": "resize"
+          }
+        ],
+        "confidence": 0.9,
+        "cost_delta_inr_month": 37.5,
+        "durability": "ephemeral",
+        "expected_signal": {
+          "alert_should_clear": "KubePodOOMKilled",
+          "queries": {},
+          "thresholds": {},
+          "window_seconds": 720
+        },
+        "gitops_managed": false,
+        "incident_id": "41",
+        "plan_id": "",
+        "planner_version": "0",
+        "refusal_reason": null,
+        "reversibility": "reversible",
+        "runbook": "oom_memory_bump",
+        "summary": "raise chaos/hungry-worker-67c8c4f7d6-ffd8f hungry-worker memory 256Mi -> 384Mi in place (no restart)",
+        "target_kind": "Pod",
+        "target_name": "hungry-worker-67c8c4f7d6-ffd8f",
+        "target_namespace": "chaos",
+        "ttl_seconds": 7200
+      },
+      "prev_hash": "01cb7faa9e1fbcf4df76c154719837c347fd4d3b93fe0d48d04696647b449bbd",
+      "seq": 160
+    },
+    {
+      "actor": "healops",
+      "event_type": "policy",
+      "execution_id": null,
+      "hash": "1a790ec3f4ea2d22b1c8a8896bda6661390ba58f5852e890c07e641ad6c2e652",
+      "incident_id": 41,
+      "occurred_at": "2026-10-05T05:55:58.493511+00:00",
+      "payload": {
+        "decision": "allow",
+        "messages": [],
+        "reasons": []
+      },
+      "prev_hash": "8d4824622b7e35a6110e73a08fd30fddb3a9b8a2fef697997190f76e42ce6e73",
+      "seq": 161
+    },
+    {
+      "actor": "healops",
+      "event_type": "execute",
+      "execution_id": 5,
+      "hash": "952f1ec2fc1f7ddf25501eb9524378a36f48b63e2a0cd742e128e3eb9a8be93d",
+      "incident_id": 41,
+      "occurred_at": "2026-10-05T05:55:58.493511+00:00",
+      "payload": {
+        "detail": "raised hungry-worker memory 256Mi -> 384Mi in place; restartCount unchanged at 2",
+        "ok": true,
+        "plan_id": "01a10aa2-1bcc-781a-821a-65ebcdfcf766",
+        "state_after": {
+          "container": "hungry-worker",
+          "memory_limit_mib": 384,
+          "pod": "hungry-worker-67c8c4f7d6-ffd8f",
+          "restart_count": 2
+        },
+        "state_before": {
+          "container": "hungry-worker",
+          "memory_limit_mib": 256,
+          "pod": "hungry-worker-67c8c4f7d6-ffd8f",
+          "restart_count": 2
+        }
+      },
+      "prev_hash": "1a790ec3f4ea2d22b1c8a8896bda6661390ba58f5852e890c07e641ad6c2e652",
+      "seq": 162
+    },
+    {
+      "actor": "healops",
+      "event_type": "verify",
+      "execution_id": 5,
+      "hash": "716777b28820acc1dfe627bf729c437556dd5ceab0ba1d730f120b7e2830e672",
+      "incident_id": 41,
+      "occurred_at": "2026-10-05T06:08:14.546534+00:00",
+      "payload": {
+        "alert_cleared": true,
+        "new_alerts": [],
+        "outcome": "remediated",
+        "reasons": [
+          "alert cleared, signals within thresholds, no new alerts on the target"
+        ],
+        "signals_after": {
+          "memory_usage_ratio": 0.8736165364583334,
+          "oom_events": 0.0,
+          "psi_full": 0.0,
+          "restarts": 0.0,
+          "throttle_ratio": 0.0
+        },
+        "signals_before": {
+          "memory_usage_ratio": null,
+          "oom_events": 2.2396239623962395,
+          "psi_full": 0.00016994408613594438,
+          "restarts": 2.0,
+          "throttle_ratio": 0.0
+        }
+      },
+      "prev_hash": "311b03e66caa4401076d89c0e3400f9a8719f7040be8fcd126a3168cb70198cd",
+      "seq": 183
+    }
+  ],
+  "mode": "auto",
+  "namespace": "chaos",
+  "opened_at": "2026-10-05T05:55:58.375905+00:00",
+  "outcome": "remediated",
+  "outcome_detail": "remediated",
+  "plans": [
+    {
+      "actions": [
+        {
+          "body": {
+            "spec": {
+              "containers": [
+                {
+                  "name": "hungry-worker",
+                  "resources": {
+                    "limits": {
+                      "memory": "384Mi"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "name": "hungry-worker-67c8c4f7d6-ffd8f",
+          "namespace": "chaos",
+          "resource": "v1/Pod",
+          "subresource": "resize",
+          "verb": "resize"
+        }
+      ],
+      "blast_radius": {
+        "namespaces": [
+          "chaos"
+        ],
+        "nodes": 0,
+        "pods": 1,
+        "score": 1,
+        "user_facing": false
+      },
+      "compensation": [
+        {
+          "body": {
+            "spec": {
+              "containers": [
+                {
+                  "name": "hungry-worker",
+                  "resources": {
+                    "limits": {
+                      "memory": "256Mi"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "name": "hungry-worker-67c8c4f7d6-ffd8f",
+          "namespace": "chaos",
+          "resource": "v1/Pod",
+          "subresource": "resize",
+          "verb": "resize"
+        }
+      ],
+      "confidence": 0.9,
+      "cost_delta_inr_month": 37.5,
+      "created_at": "2026-10-05T05:55:58.493511+00:00",
+      "durability": "ephemeral",
+      "expected_signal": {
+        "alert_should_clear": "KubePodOOMKilled",
+        "queries": {},
+        "thresholds": {},
+        "window_seconds": 720
+      },
+      "id": "01a10aa2-1bcc-781a-821a-65ebcdfcf766",
+      "planner_version": "1.0.0",
+      "policy_decision": "allow",
+      "policy_reasons": [],
+      "refusal_reason": null,
+      "reversibility": "reversible",
+      "runbook": "oom_memory_bump",
+      "summary": "raise chaos/hungry-worker-67c8c4f7d6-ffd8f hungry-worker memory 256Mi -> 384Mi in place (no restart)",
+      "target_key": "chaos/Pod/hungry-worker-67c8c4f7d6-ffd8f",
+      "ttl_seconds": 7200
+    }
+  ],
+  "runbook": "oom_memory_bump",
+  "state": "remediated",
+  "summary": "raise chaos/hungry-worker-67c8c4f7d6-ffd8f hungry-worker memory 256Mi -> 384Mi in place (no restart)",
+  "target_key": "chaos/Deployment/hungry-worker",
+  "trail": [
+    {
+      "detail": "new_incident",
+      "label": "1 alert(s)",
+      "stage": "correlate",
+      "state": "passed"
+    },
+    {
+      "detail": "raise chaos/hungry-worker-67c8c4f7d6-ffd8f hungry-worker memory 256Mi -> 384Mi in place (no restart)",
+      "label": "oom_memory_bump",
+      "stage": "plan",
+      "state": "passed"
+    },
+    {
+      "detail": "",
+      "label": "allowed",
+      "stage": "policy",
+      "state": "passed"
+    },
+    {
+      "detail": "within policy, no human needed",
+      "label": "auto",
+      "stage": "gate",
+      "state": "passed"
+    },
+    {
+      "detail": "raised hungry-worker memory 256Mi -> 384Mi in place; restartCount unchanged at 2",
+      "label": "applied",
+      "stage": "execute",
+      "state": "passed"
+    },
+    {
+      "detail": "alert cleared, signals within thresholds, no new alerts on the target",
+      "label": "remediated",
+      "stage": "verify",
+      "state": "passed"
+    },
+    {
+      "detail": "",
+      "label": "remediated",
+      "stage": "outcome",
+      "state": "passed"
+    }
+  ],
+  "verifications": [
+    {
+      "alert_cleared": true,
+      "checked_at": "2026-10-05T06:08:14.546534+00:00",
+      "compensated": false,
+      "execution_id": 5,
+      "outcome": "remediated",
+      "reasons": [
+        "alert cleared, signals within thresholds, no new alerts on the target"
+      ],
+      "signals_after": {
+        "memory_usage_ratio": 0.8736165364583334,
+        "oom_events": 0.0,
+        "psi_full": 0.0,
+        "restarts": 0.0,
+        "throttle_ratio": 0.0
+      },
+      "signals_before": {
+        "memory_usage_ratio": null,
+        "oom_events": 2.2396239623962395,
+        "psi_full": 0.00016994408613594438,
+        "restarts": 2.0,
+        "throttle_ratio": 0.0
+      },
+      "window_seconds": 720
+    }
+  ]
+}

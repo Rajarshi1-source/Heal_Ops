@@ -1,0 +1,242 @@
+{
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alertname": "KubePodOOMKilled",
+      "fingerprint": "7d86fc7c08a1bf56",
+      "id": 165,
+      "namespace": "chaos",
+      "node": "healops-worker",
+      "pod": "restart-on-resize-59975fc5cb-vcpqf",
+      "received_at": "2026-10-05T05:53:43.400050+00:00",
+      "role": "cause",
+      "severity": "critical",
+      "starts_at": "2026-10-05T05:50:28.996000+00:00",
+      "status": "firing"
+    }
+  ],
+  "approvals": [],
+  "cause_alertname": "KubePodOOMKilled",
+  "cause_scope": "workload",
+  "closed_at": null,
+  "correlation_reason": "new_incident",
+  "executions": [],
+  "format_version": 1,
+  "id": 40,
+  "ledger": [
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "4b9558c546746a9aa03caf9b37b04ccca7e63b5b140bcb4f90d5384b6f3cc59b",
+      "incident_id": 40,
+      "occurred_at": "2026-10-05T05:53:43.400050+00:00",
+      "payload": {
+        "alertname": "KubePodOOMKilled",
+        "correlation_reason": "new_incident",
+        "created_incident": true,
+        "fingerprint": "7d86fc7c08a1bf56",
+        "role": "cause",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/restart-on-resize"
+      },
+      "prev_hash": "cd09cb84fcfa6e0275e7adae239327fc07331013dbd063c8d0ae58b99460467d",
+      "seq": 153
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "87dfb47447321afa478e4176998689c96458f60a683362be1a56b11e3ebd933e",
+      "incident_id": 40,
+      "occurred_at": "2026-10-05T05:53:43.506859+00:00",
+      "payload": {
+        "alertname": "KubePodOOMKilled",
+        "input": {
+          "cause_alert": {
+            "alertname": "KubePodOOMKilled",
+            "annotations": {
+              "description": "chaos/restart-on-resize-59975fc5cb-vcpqf container hungry recorded an OOM event in the last 10m. Counted from container_oom_events_total, or where cAdvisor cannot count, from restarts whose last termination was an OOM kill.",
+              "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#oom_memory_bump",
+              "summary": "Container hungry was OOM killed"
+            },
+            "container": "hungry",
+            "fingerprint": "7d86fc7c08a1bf56",
+            "labels": {
+              "alertname": "KubePodOOMKilled",
+              "container": "hungry",
+              "healops_runbook": "oom_memory_bump",
+              "namespace": "chaos",
+              "node": "healops-worker",
+              "pod": "restart-on-resize-59975fc5cb-vcpqf",
+              "prometheus": "monitoring/kps-prometheus",
+              "severity": "critical"
+            },
+            "namespace": "chaos",
+            "node": "healops-worker",
+            "pod": "restart-on-resize-59975fc5cb-vcpqf",
+            "severity": "critical",
+            "starts_at": "2026-10-05T05:50:28.996000+00:00",
+            "status": "firing"
+          },
+          "cause_scope": "workload",
+          "correlation_reason": "new_incident",
+          "expected_effect": null,
+          "expected_runbook": null,
+          "format_version": 1,
+          "incident_id": "40",
+          "label_note": null,
+          "opened_at": "2026-10-05T05:53:43.400050+00:00",
+          "symptom_alerts": [],
+          "target": {
+            "annotations": {
+              "deployment.kubernetes.io/revision": "2",
+              "meta.helm.sh/release-name": "chaos",
+              "meta.helm.sh/release-namespace": "chaos"
+            },
+            "autoscaler": null,
+            "containers": [
+              {
+                "cpu_limit_millis": 100,
+                "cpu_request_millis": 10,
+                "cpu_resize_policy": null,
+                "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+                "memory_limit_mib": 256,
+                "memory_peak_mib": 248.87109375,
+                "memory_request_mib": 128,
+                "memory_resize_policy": "RestartContainer",
+                "name": "hungry",
+                "restart_count": 4
+              }
+            ],
+            "drained_workloads": [],
+            "gitops_manager": "unmanaged",
+            "kind": "Deployment",
+            "labels": {
+              "app": "restart-on-resize",
+              "app.kubernetes.io/managed-by": "Helm",
+              "app.kubernetes.io/name": "restart-on-resize",
+              "app.kubernetes.io/part-of": "chaos-app",
+              "healops.io/expected-decision": "refuse"
+            },
+            "name": "restart-on-resize",
+            "namespace": "chaos",
+            "node": null,
+            "node_state": null,
+            "peer_nodes": [],
+            "pods": [
+              "restart-on-resize-59975fc5cb-vcpqf"
+            ],
+            "previous_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+            "previous_revision": 1,
+            "previous_template_digest": "b84f5c71d3917eda66c2bf17b421023836477edc3e39b9728c6884cee901570d",
+            "ready_replicas": 1,
+            "replicas": 1,
+            "revision": 2,
+            "server_supports_in_place_resize": true,
+            "template_digest": "b84f5c71d3917eda66c2bf17b421023836477edc3e39b9728c6884cee901570d"
+          }
+        },
+        "runbook": "oom_memory_bump",
+        "target": "chaos/Deployment/restart-on-resize"
+      },
+      "prev_hash": "4b9558c546746a9aa03caf9b37b04ccca7e63b5b140bcb4f90d5384b6f3cc59b",
+      "seq": 154
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan",
+      "execution_id": null,
+      "hash": "ca9a6cf305b31ce239ad7c01be4f164d2510b4209f5986180d25967f79662ff5",
+      "incident_id": 40,
+      "occurred_at": "2026-10-05T05:53:43.506859+00:00",
+      "payload": {
+        "actions": [],
+        "blast_radius": {
+          "namespaces": [],
+          "nodes": 0,
+          "pods": 0,
+          "user_facing": false
+        },
+        "blast_radius_score": 0,
+        "compensation": [],
+        "confidence": 1.0,
+        "cost_delta_inr_month": 0.0,
+        "durability": "ephemeral",
+        "expected_signal": null,
+        "gitops_managed": false,
+        "incident_id": "40",
+        "plan_id": "",
+        "planner_version": "0",
+        "refusal_reason": "hungry declares resizePolicy RestartContainer for memory, so an in-place bump would restart it -- escalating instead of claiming no restart",
+        "reversibility": "reversible",
+        "runbook": "oom_memory_bump",
+        "summary": "REFUSED: hungry declares resizePolicy RestartContainer for memory, so an in-place bump would restart it -- escalating instead of claiming no restart",
+        "target_kind": "Pod",
+        "target_name": "restart-on-resize-59975fc5cb-vcpqf",
+        "target_namespace": "chaos",
+        "ttl_seconds": 0
+      },
+      "prev_hash": "87dfb47447321afa478e4176998689c96458f60a683362be1a56b11e3ebd933e",
+      "seq": 155
+    }
+  ],
+  "mode": null,
+  "namespace": "chaos",
+  "opened_at": "2026-10-05T05:53:43.400050+00:00",
+  "outcome": "refused",
+  "outcome_detail": "refused",
+  "plans": [
+    {
+      "actions": [],
+      "blast_radius": {
+        "namespaces": [],
+        "nodes": 0,
+        "pods": 0,
+        "score": 0,
+        "user_facing": false
+      },
+      "compensation": [],
+      "confidence": 1.0,
+      "cost_delta_inr_month": 0.0,
+      "created_at": "2026-10-05T05:53:43.506859+00:00",
+      "durability": "ephemeral",
+      "expected_signal": {},
+      "id": "01a10aa0-0c6c-7ff6-9340-6e3c68b560ce",
+      "planner_version": "1.0.0",
+      "policy_decision": "deny",
+      "policy_reasons": [],
+      "refusal_reason": "hungry declares resizePolicy RestartContainer for memory, so an in-place bump would restart it -- escalating instead of claiming no restart",
+      "reversibility": "reversible",
+      "runbook": "oom_memory_bump",
+      "summary": "REFUSED: hungry declares resizePolicy RestartContainer for memory, so an in-place bump would restart it -- escalating instead of claiming no restart",
+      "target_key": "chaos/Pod/restart-on-resize-59975fc5cb-vcpqf",
+      "ttl_seconds": 0
+    }
+  ],
+  "runbook": "oom_memory_bump",
+  "state": "escalated",
+  "summary": "REFUSED: hungry declares resizePolicy RestartContainer for memory, so an in-place bump would restart it -- escalating instead of claiming no restart",
+  "target_key": "chaos/Deployment/restart-on-resize",
+  "trail": [
+    {
+      "detail": "new_incident",
+      "label": "1 alert(s)",
+      "stage": "correlate",
+      "state": "passed"
+    },
+    {
+      "detail": "hungry declares resizePolicy RestartContainer for memory, so an in-place bump would restart it -- escalating instead of claiming no restart",
+      "label": "refused",
+      "stage": "plan",
+      "state": "stopped"
+    },
+    {
+      "detail": "",
+      "label": "refused",
+      "stage": "outcome",
+      "state": "stopped"
+    }
+  ],
+  "verifications": []
+}

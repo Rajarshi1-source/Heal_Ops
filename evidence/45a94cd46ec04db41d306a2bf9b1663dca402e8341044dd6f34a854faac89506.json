@@ -1,0 +1,242 @@
+{
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alertname": "KubePodCrashLooping",
+      "fingerprint": "68e3f9277c19222e",
+      "id": 136,
+      "namespace": "chaos",
+      "node": "healops-worker",
+      "pod": "lonely-api-9d8dfd97b-4whgm",
+      "received_at": "2026-10-05T05:40:28.470217+00:00",
+      "role": "cause",
+      "severity": "critical",
+      "starts_at": "2026-10-05T05:39:58.996000+00:00",
+      "status": "firing"
+    }
+  ],
+  "approvals": [],
+  "cause_alertname": "KubePodCrashLooping",
+  "cause_scope": "workload",
+  "closed_at": null,
+  "correlation_reason": "new_incident",
+  "executions": [],
+  "format_version": 1,
+  "id": 31,
+  "ledger": [
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "0a39d5c5ca97ab7b70df7242f383d7f5944c3881ca41d07e53ae11a827e00d19",
+      "incident_id": 31,
+      "occurred_at": "2026-10-05T05:40:28.470217+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "correlation_reason": "new_incident",
+        "created_incident": true,
+        "fingerprint": "68e3f9277c19222e",
+        "role": "cause",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/lonely-api"
+      },
+      "prev_hash": "5663a942fcb516f5c702cc6830a218bc772b39052d857f0763657920d5a26fd3",
+      "seq": 115
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "f74f5e56d9967d7761f0eb235211e7221e52dff45404c2c817df1a37f8d1ba53",
+      "incident_id": 31,
+      "occurred_at": "2026-10-05T05:40:28.661818+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "input": {
+          "cause_alert": {
+            "alertname": "KubePodCrashLooping",
+            "annotations": {
+              "description": "Container crashy in chaos/lonely-api-9d8dfd97b-4whgm on node healops-worker has been in CrashLoopBackOff for 2m.",
+              "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+              "summary": "Pod chaos/lonely-api-9d8dfd97b-4whgm is crash looping"
+            },
+            "container": "crashy",
+            "fingerprint": "68e3f9277c19222e",
+            "labels": {
+              "alertname": "KubePodCrashLooping",
+              "container": "crashy",
+              "healops_runbook": "crashloop_rollback",
+              "namespace": "chaos",
+              "node": "healops-worker",
+              "pod": "lonely-api-9d8dfd97b-4whgm",
+              "prometheus": "monitoring/kps-prometheus",
+              "severity": "critical"
+            },
+            "namespace": "chaos",
+            "node": "healops-worker",
+            "pod": "lonely-api-9d8dfd97b-4whgm",
+            "severity": "critical",
+            "starts_at": "2026-10-05T05:39:58.996000+00:00",
+            "status": "firing"
+          },
+          "cause_scope": "workload",
+          "correlation_reason": "new_incident",
+          "expected_effect": null,
+          "expected_runbook": null,
+          "format_version": 1,
+          "incident_id": "31",
+          "label_note": null,
+          "opened_at": "2026-10-05T05:40:28.470217+00:00",
+          "symptom_alerts": [],
+          "target": {
+            "annotations": {
+              "deployment.kubernetes.io/revision": "2",
+              "meta.helm.sh/release-name": "chaos",
+              "meta.helm.sh/release-namespace": "chaos"
+            },
+            "autoscaler": null,
+            "containers": [
+              {
+                "cpu_limit_millis": 50,
+                "cpu_request_millis": 10,
+                "cpu_resize_policy": null,
+                "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+                "memory_limit_mib": 64,
+                "memory_peak_mib": null,
+                "memory_request_mib": 32,
+                "memory_resize_policy": null,
+                "name": "crashy",
+                "restart_count": 11
+              }
+            ],
+            "drained_workloads": [],
+            "gitops_manager": "unmanaged",
+            "kind": "Deployment",
+            "labels": {
+              "app": "lonely-api",
+              "app.kubernetes.io/managed-by": "Helm",
+              "app.kubernetes.io/name": "lonely-api",
+              "app.kubernetes.io/part-of": "chaos-app",
+              "healops.io/expected-decision": "deny"
+            },
+            "name": "lonely-api",
+            "namespace": "chaos",
+            "node": null,
+            "node_state": null,
+            "peer_nodes": [],
+            "pods": [
+              "lonely-api-9d8dfd97b-4whgm"
+            ],
+            "previous_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+            "previous_revision": 1,
+            "previous_template_digest": "e8fdcfb88df1b8df652c0a07be363ab9d2ef207f6c1293545e2f522ddf151477",
+            "ready_replicas": 0,
+            "replicas": 1,
+            "revision": 2,
+            "server_supports_in_place_resize": true,
+            "template_digest": "e8fdcfb88df1b8df652c0a07be363ab9d2ef207f6c1293545e2f522ddf151477"
+          }
+        },
+        "runbook": "crashloop_rollback",
+        "target": "chaos/Deployment/lonely-api"
+      },
+      "prev_hash": "39cce4339a29440b3d42acbe9c13037467f948a3d5d7fde820ce343b92962ed2",
+      "seq": 118
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan",
+      "execution_id": null,
+      "hash": "35a86a14e756f1f259ca9d9757223c544eac4d864f1bbff80315d2743f80dcd5",
+      "incident_id": 31,
+      "occurred_at": "2026-10-05T05:40:28.661818+00:00",
+      "payload": {
+        "actions": [],
+        "blast_radius": {
+          "namespaces": [],
+          "nodes": 0,
+          "pods": 0,
+          "user_facing": false
+        },
+        "blast_radius_score": 0,
+        "compensation": [],
+        "confidence": 1.0,
+        "cost_delta_inr_month": 0.0,
+        "durability": "ephemeral",
+        "expected_signal": null,
+        "gitops_managed": false,
+        "incident_id": "31",
+        "plan_id": "",
+        "planner_version": "0",
+        "refusal_reason": "the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+        "reversibility": "reversible",
+        "runbook": "crashloop_rollback",
+        "summary": "REFUSED: the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+        "target_kind": "Deployment",
+        "target_name": "lonely-api",
+        "target_namespace": "chaos",
+        "ttl_seconds": 0
+      },
+      "prev_hash": "f74f5e56d9967d7761f0eb235211e7221e52dff45404c2c817df1a37f8d1ba53",
+      "seq": 119
+    }
+  ],
+  "mode": null,
+  "namespace": "chaos",
+  "opened_at": "2026-10-05T05:40:28.470217+00:00",
+  "outcome": "refused",
+  "outcome_detail": "refused",
+  "plans": [
+    {
+      "actions": [],
+      "blast_radius": {
+        "namespaces": [],
+        "nodes": 0,
+        "pods": 0,
+        "score": 0,
+        "user_facing": false
+      },
+      "compensation": [],
+      "confidence": 1.0,
+      "cost_delta_inr_month": 0.0,
+      "created_at": "2026-10-05T05:40:28.661818+00:00",
+      "durability": "ephemeral",
+      "expected_signal": {},
+      "id": "01a10a93-eb97-708c-96ce-ae0fcc3ded6c",
+      "planner_version": "1.0.0",
+      "policy_decision": "deny",
+      "policy_reasons": [],
+      "refusal_reason": "the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+      "reversibility": "reversible",
+      "runbook": "crashloop_rollback",
+      "summary": "REFUSED: the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+      "target_key": "chaos/Deployment/lonely-api",
+      "ttl_seconds": 0
+    }
+  ],
+  "runbook": "crashloop_rollback",
+  "state": "escalated",
+  "summary": "REFUSED: the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+  "target_key": "chaos/Deployment/lonely-api",
+  "trail": [
+    {
+      "detail": "new_incident",
+      "label": "1 alert(s)",
+      "stage": "correlate",
+      "state": "passed"
+    },
+    {
+      "detail": "the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+      "label": "refused",
+      "stage": "plan",
+      "state": "stopped"
+    },
+    {
+      "detail": "",
+      "label": "refused",
+      "stage": "outcome",
+      "state": "stopped"
+    }
+  ],
+  "verifications": []
+}

@@ -73,7 +73,7 @@ class FakeDeploymentOps:
         ]
 
     async def scale(
-        self, namespace: str, name: str, replicas: int, resource_version: str | None = None
+        self, namespace: str, name: str, replicas: int, expect_replicas: int | None = None
     ) -> None:
         if self.raise_conflict:
             raise self.ConflictError("scale changed under us; re-planning")
@@ -451,6 +451,25 @@ def s3(monkeypatch: pytest.MonkeyPatch) -> FakeS3:
 class TestDiskCleanupExecution:
     runbook = DiskCleanup()
 
+    @pytest.fixture(autouse=True)
+    def _roots(self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The archive roots are the only place the agent may touch; here, the test's own dir."""
+        from config import get_settings
+
+        monkeypatch.setattr(get_settings(), "disk_archive_roots", [str(tmp_path)])
+
+    async def test_a_path_outside_the_roots_is_refused(self, s3: FakeS3, tmp_path: Any) -> None:
+        """Whatever produced the plan, the agent only deletes under the configured roots."""
+        outside = tmp_path.parent / "elsewhere.log"
+        outside.write_text("keep me", encoding="utf-8")
+        try:
+            result = await self.runbook.execute(disk_plan([str(outside)]))
+            assert not result.ok
+            assert "outside the archive roots" in result.detail
+            assert outside.exists()
+        finally:
+            outside.unlink()
+
     async def test_archives_then_deletes(self, s3: FakeS3, tmp_path: Any) -> None:
         first = tmp_path / "a.log"
         second = tmp_path / "b.log"
@@ -547,3 +566,27 @@ class TestDiskCleanupExecution:
         result = await self.runbook.compensate(plan)
         assert not result.ok
         assert result.state_after["missing"]
+
+
+async def test_a_renumbered_revision_is_still_found_by_its_template() -> None:
+    """Regression, found on the kind cluster: Kubernetes renumbers a reused ReplicaSet, so the
+    revision 8 an undo was registered against is revision 10 by the time it runs. By digest, the
+    undo still finds the template it means; by number it reported 'revision 8 is gone'."""
+    from types import SimpleNamespace
+
+    from k8s.state_capture import template_digest
+    from runbooks.crashloop_rollback import _find
+
+    bad = {
+        "metadata": {"labels": {"app": "api"}},
+        "spec": {"containers": [{"name": "api", "env": [{"name": "X"}]}]},
+    }
+    good = {"metadata": {"labels": {"app": "api"}}, "spec": {"containers": [{"name": "api"}]}}
+    revisions = [
+        SimpleNamespace(revision=10, template=bad),
+        SimpleNamespace(revision=9, template=good),
+    ]
+    undo = {"to_revision": 8, "to_template": template_digest(bad)}
+
+    assert _find(revisions, undo).revision == 10
+    assert _find(revisions, {"to_revision": 8}) is None  # the number alone really is gone

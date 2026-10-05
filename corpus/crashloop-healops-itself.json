@@ -1,0 +1,79 @@
+{
+  "cause_alert": {
+    "alertname": "KubePodCrashLooping",
+    "annotations": {},
+    "container": "engine",
+    "fingerprint": "scenario-crashloop-healops-itself",
+    "labels": {
+      "alertname": "KubePodCrashLooping",
+      "container": "engine",
+      "namespace": "healops",
+      "severity": "warning"
+    },
+    "namespace": "healops",
+    "node": null,
+    "pod": null,
+    "severity": "warning",
+    "starts_at": null,
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "captured_by_chaos_harness",
+  "expected_effect": "deny",
+  "expected_runbook": "crashloop_rollback",
+  "format_version": 1,
+  "incident_id": "crashloop-healops-itself",
+  "label_note": "HealOps never remediates HealOps (deny-self-remediation), whatever its pods do. [target captured live; alert synthesised]",
+  "opened_at": null,
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "1",
+      "meta.helm.sh/release-name": "healops",
+      "meta.helm.sh/release-namespace": "healops"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": null,
+        "cpu_request_millis": 100,
+        "cpu_resize_policy": null,
+        "image": "healops-engine:0.1.0",
+        "memory_limit_mib": 512,
+        "memory_peak_mib": null,
+        "memory_request_mib": 256,
+        "memory_resize_policy": null,
+        "name": "engine",
+        "restart_count": 0
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {
+      "app.kubernetes.io/component": "engine",
+      "app.kubernetes.io/instance": "healops",
+      "app.kubernetes.io/managed-by": "Helm",
+      "app.kubernetes.io/name": "healops",
+      "app.kubernetes.io/version": "0.1.0",
+      "healops.io/remediation": "disabled",
+      "helm.sh/chart": "healops-0.1.0"
+    },
+    "name": "healops-engine",
+    "namespace": "healops",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "healops-engine-855dd58dbf-lm8vg"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 1,
+    "replicas": 1,
+    "revision": 1,
+    "server_supports_in_place_resize": true,
+    "template_digest": "e5ce306ee1c6afd0a4dbbd3535c729c95424d1484664a3a8ac54652fb7c7cecd"
+  }
+}

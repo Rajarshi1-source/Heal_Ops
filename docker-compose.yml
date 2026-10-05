@@ -16,7 +16,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
+      s3:
         condition: service_healthy
     environment:
       HEALOPS_DATABASE_URL: postgresql+asyncpg://healops_app:healops@postgres:5432/healops
@@ -27,10 +27,10 @@ services:
       HEALOPS_SLACK_BOT_TOKEN: ${HEALOPS_SLACK_BOT_TOKEN:-}
       HEALOPS_SLACK_SIGNING_SECRET: ${HEALOPS_SLACK_SIGNING_SECRET:-}
       HEALOPS_APPROVALS_API_TOKEN: ${HEALOPS_APPROVALS_API_TOKEN:-}
-      HEALOPS_S3_ENDPOINT: http://minio:9000
+      HEALOPS_S3_ENDPOINT: http://s3:8333
       HEALOPS_S3_BUCKET: healops-archives
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_ACCESS_KEY_ID: healops
+      AWS_SECRET_ACCESS_KEY: healops-dev-secret
       AWS_DEFAULT_REGION: us-east-1
       KUBECONFIG: /home/healops/.kube/config
       HEALOPS_ENVIRONMENT: local
@@ -93,19 +93,21 @@ services:
       timeout: 3s
       retries: 5
 
-  minio:
-    image: minio/minio:RELEASE.2026-04-17T23-12-11Z
+  s3:
+    # S3-compatible object storage for the disk runbook's archive-then-delete. SeaweedFS, because
+    # MinIO stopped publishing community container images, so no MinIO tag can be pinned.
+    image: chrislusf/seaweedfs:4.48
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "8333:8333"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command: ["server", "/data", "--console-address", ":9001"]
+      # SeaweedFS reads its admin identity from these; requests signed with anything else are refused.
+      AWS_ACCESS_KEY_ID: healops
+      AWS_SECRET_ACCESS_KEY: healops-dev-secret
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333"]
     volumes:
-      - minio_data:/data
+      - s3_data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8333/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -124,4 +126,4 @@ services:
 
 volumes:
   postgres_data:
-  minio_data:
+  s3_data:

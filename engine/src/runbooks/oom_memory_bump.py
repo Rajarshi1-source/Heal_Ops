@@ -39,6 +39,7 @@ from plan import (
     Reversibility,
     refuse,
 )
+from pricing import INR_PER_GIB_MONTH
 from runbooks.base import ExecutionResult, Runbook, SignalWindow, registry
 
 log = structlog.get_logger(__name__)
@@ -46,13 +47,17 @@ log = structlog.get_logger(__name__)
 #: The new limit must clear the observed peak by this much, or the next spike OOMs again.
 PEAK_HEADROOM = 1.25
 
-#: Rupees per GiB-month of memory, from the same pinned price list as the CPU runbook. A constant so
-#: the decision eval stays deterministic.
-INR_PER_GIB_MONTH = 300.0
 
 #: The mitigation returns on its own. A permanently larger limit is a sizing decision, and that
 #: belongs in the template, in review.
 RESIZE_TTL_SECONDS = 7200
+
+#: The alert counts OOM kills over a 10-minute lookback (`oomWindow`), so the kill that triggered
+#: the fix stays inside it for up to ten minutes after a fix that worked. Judged at exactly 600s
+#: the alert was still firing -- found on kind, where a resize that held was reverted for it. Two
+#: minutes past the lookback covers scrape, rule evaluation and Alertmanager; still inside the
+#: watchdog's 15-minute deadline.
+VERIFY_WINDOW_SECONDS = 720
 
 #: How often the kubelet's applied resources are re-read while waiting for a resize.
 RESIZE_POLL_SECONDS = 2.0
@@ -142,7 +147,7 @@ class OomMemoryBump(Runbook):
             ttl_seconds=RESIZE_TTL_SECONDS,
             blast_radius=BlastRadius(pods=1, namespaces=(target.namespace,)),
             expected_signal=ExpectedSignal(
-                alert_should_clear="KubePodOOMKilled", window_seconds=600
+                alert_should_clear="KubePodOOMKilled", window_seconds=VERIFY_WINDOW_SECONDS
             ),
             confidence=_confidence(container),
             summary=(
@@ -195,7 +200,7 @@ class OomMemoryBump(Runbook):
             ttl_seconds=RESIZE_TTL_SECONDS,
             blast_radius=BlastRadius(pods=target.replicas, namespaces=(target.namespace or "",)),
             expected_signal=ExpectedSignal(
-                alert_should_clear="KubePodOOMKilled", window_seconds=600
+                alert_should_clear="KubePodOOMKilled", window_seconds=VERIFY_WINDOW_SECONDS
             ),
             confidence=_confidence(container),
             summary=(

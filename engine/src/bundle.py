@@ -100,6 +100,11 @@ class Target:
     revision: int | None = None
     previous_revision: int | None = None
     previous_image: str | None = None
+    # Digests of the current and previous pod templates. Equal means a rollback would change
+    # nothing at all; different images are NOT required -- a bad config rollout on the same image
+    # is exactly what a rollback undoes. None when not captured.
+    template_digest: str | None = None
+    previous_template_digest: str | None = None
 
     # Cluster capability, not target state, but it belongs in the bundle for the same reason
     # everything else does: the planner must not query the cluster to learn it.
@@ -108,6 +113,9 @@ class Target:
     # Populated for node-scoped incidents (runbook 5's capacity precheck).
     node_state: NodeState | None = None
     peer_nodes: tuple[NodeState, ...] = ()
+    # The controllers whose pods a drain would move, as `namespace/Kind/name`. Recovery is judged
+    # on THESE coming back, not on everything else that happens to share their namespaces.
+    drained_workloads: tuple[str, ...] = ()
 
     @property
     def key(self) -> str:
@@ -186,6 +194,7 @@ class IncidentBundle:
         t["containers"] = _containers(t.get("containers"))
         t["pods"] = tuple(t.get("pods") or ())
         t["peer_nodes"] = _nodes(t.get("peer_nodes"))
+        t["drained_workloads"] = tuple(t.get("drained_workloads") or ())
         if t.get("autoscaler"):
             t["autoscaler"] = AutoscalerState(**t["autoscaler"])
         if t.get("node_state"):

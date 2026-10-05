@@ -105,6 +105,72 @@ async def _instant_query(query: str) -> float | None:
     return max(values) if values else None
 
 
+async def pending_alerts(
+    namespace: str | None,
+    *,
+    pod: str | None = None,
+    node: str | None = None,
+    workload: str | None = None,
+) -> list[str] | None:
+    """Alertnames whose condition already holds on a target but whose `for:` has not elapsed.
+
+    Alertmanager never sees a pending alert, so only Prometheus can say that a condition was
+    already true. `None` when Prometheus cannot be asked -- which callers treat as "unknown", not
+    as "nothing pending".
+    """
+    parts = ['alertstate="pending"']
+    if namespace:
+        parts.append(f'namespace="{namespace}"')
+    if pod:
+        parts.append(f'pod="{pod}"')
+    elif workload:
+        parts.append(f'pod=~"{workload}-.*"')
+    if node:
+        parts.append(f'node="{node}"')
+    settings = get_settings()
+    url = f"{settings.prometheus_url.rstrip('/')}/api/v1/query"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as http:
+            response = await http.get(url, params={"query": f"ALERTS{{{','.join(parts)}}}"})
+            response.raise_for_status()
+            body: dict[str, Any] = response.json()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("pending alert query failed", error=str(exc))
+        return None
+    if body.get("status") != "success":
+        return None
+    return sorted(
+        {str(r.get("metric", {}).get("alertname", "")) for r in body["data"]["result"]} - {""}
+    )
+
+
+def oom_query(selector: str, window: str) -> str:
+    """OOM kills over the window, by COUNTER -- the same two sources as the alert's recording rule.
+
+    cAdvisor's counter, scoped to real containers: the pod-level cgroup's series is always 0 and
+    would otherwise answer for every container. Where cAdvisor cannot count (it reads OOM kills
+    from the kernel log, which a nested container cannot see -- a kind node), restarts qualified
+    by an OOMKilled last termination. Never the gauge alone: it flaps.
+    """
+    inner = selector[1:-1] if selector else ""
+    cadvisor = "{" + ",".join(p for p in (inner, 'container!=""') if p) + "}"
+    oom_reason = "{" + ",".join(p for p in (inner, 'reason="OOMKilled"') if p) + "}"
+    # The larger of the two counts: on kind cAdvisor's series EXISTS and reads 0 through real OOM
+    # kills, so "first one present" would always pick it. Labelled apart so `or` keeps both.
+    return (
+        "max("
+        f'label_replace(increase(container_oom_events_total{cadvisor}[{window}]), "source", '
+        '"cadvisor", "", "")'
+        " or label_replace("
+        f"increase(kube_pod_container_status_restarts_total{selector}[{window}])"
+        " * on (namespace, pod, container) group_left"
+        " max by (namespace, pod, container)"
+        f" (kube_pod_container_status_last_terminated_reason{oom_reason}),"
+        ' "source", "restarts", "", "")'
+        ")"
+    )
+
+
 async def ping() -> bool:
     settings = get_settings()
     url = f"{settings.prometheus_url.rstrip('/')}/-/ready"
@@ -163,10 +229,7 @@ async def golden_signals(
         restarts=await _instant_query(
             f"max(increase(kube_pod_container_status_restarts_total{selector}[{window}]))"
         ),
-        # OOM by COUNTER, not the flapping last_terminated_reason gauge.
-        oom_events=await _instant_query(
-            f"max(increase(container_oom_events_total{selector}[{window}]))"
-        ),
+        oom_events=await _instant_query(oom_query(selector, window)),
         # The dimensionless ratio. Raw throttled-period counters move with replica count and window
         # length, so a raw before/after comparison is meaningless -- especially for a runbook that
         # changes the replica count.

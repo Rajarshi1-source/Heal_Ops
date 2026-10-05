@@ -20,7 +20,7 @@ from typing import Any, cast
 
 from redis.exceptions import ResponseError
 
-from cache.redis_client import get_client
+from cache.redis_client import SOCKET_TIMEOUT_SECONDS, get_client
 from config import get_settings
 
 
@@ -80,9 +80,17 @@ def _parse(message_id: str, fields: dict[str, str], delivery_count: int) -> Queu
     )
 
 
-async def read(group: str, consumer: str, count: int = 10, block_ms: int = 5000) -> list[QueuedJob]:
-    """Read new messages for this consumer group."""
+# A blocking XREADGROUP holds the socket silent for the whole block, so a block at or past the
+# client's socket timeout surfaces as a TimeoutError on every idle read -- which is exactly what a
+# 15 s verification poll did in-cluster. The test client sets no socket timeout, so only the
+# deployed engine showed it.
+MAX_BLOCK_MS = (SOCKET_TIMEOUT_SECONDS - 1) * 1000
+
+
+async def read(group: str, consumer: str, count: int = 10, block_ms: int = 2000) -> list[QueuedJob]:
+    """Read new messages for this consumer group, blocking at most `MAX_BLOCK_MS`."""
     settings = get_settings()
+    block_ms = min(block_ms, MAX_BLOCK_MS)
     response = cast(
         list[tuple[str, list[tuple[str, dict[str, str]]]]],
         await get_client().xreadgroup(

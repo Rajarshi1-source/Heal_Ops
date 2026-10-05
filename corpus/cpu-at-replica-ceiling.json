@@ -1,0 +1,88 @@
+{
+  "cause_alert": {
+    "alertname": "HighPodCPU",
+    "annotations": {},
+    "container": "cpu-burner",
+    "fingerprint": "scenario-cpu-at-replica-ceiling",
+    "labels": {
+      "alertname": "HighPodCPU",
+      "container": "cpu-burner",
+      "namespace": "chaos",
+      "node": "healops-worker2",
+      "pod": "cpu-burner-5879f48bb8-6db8m",
+      "severity": "warning"
+    },
+    "namespace": "chaos",
+    "node": "healops-worker2",
+    "pod": "cpu-burner-5879f48bb8-6db8m",
+    "severity": "warning",
+    "starts_at": null,
+    "status": "firing"
+  },
+  "cause_scope": "workload",
+  "correlation_reason": "captured_by_chaos_harness",
+  "expected_effect": "refuse",
+  "expected_runbook": "cpu_scale_up",
+  "format_version": 1,
+  "incident_id": "cpu-at-replica-ceiling",
+  "label_note": "Already at the 10-replica ceiling: more replicas is not the answer to a CPU alert. [target captured live; alert synthesised]",
+  "opened_at": null,
+  "symptom_alerts": [],
+  "target": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "1",
+      "healops.io/chaos-fixture": "cpu-burner",
+      "meta.helm.sh/release-name": "chaos",
+      "meta.helm.sh/release-namespace": "chaos"
+    },
+    "autoscaler": null,
+    "containers": [
+      {
+        "cpu_limit_millis": 400,
+        "cpu_request_millis": 50,
+        "cpu_resize_policy": null,
+        "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+        "memory_limit_mib": 64,
+        "memory_peak_mib": null,
+        "memory_request_mib": 32,
+        "memory_resize_policy": null,
+        "name": "cpu-burner",
+        "restart_count": 0
+      }
+    ],
+    "drained_workloads": [],
+    "gitops_manager": "unmanaged",
+    "kind": "Deployment",
+    "labels": {
+      "app": "cpu-burner",
+      "app.kubernetes.io/managed-by": "Helm",
+      "app.kubernetes.io/name": "cpu-burner",
+      "app.kubernetes.io/part-of": "chaos-app"
+    },
+    "name": "cpu-burner",
+    "namespace": "chaos",
+    "node": null,
+    "node_state": null,
+    "peer_nodes": [],
+    "pods": [
+      "cpu-burner-5879f48bb8-6db8m",
+      "cpu-burner-5879f48bb8-6djvw",
+      "cpu-burner-5879f48bb8-85cb5",
+      "cpu-burner-5879f48bb8-g8m7r",
+      "cpu-burner-5879f48bb8-l4pc4",
+      "cpu-burner-5879f48bb8-mqbjl",
+      "cpu-burner-5879f48bb8-qjrbp",
+      "cpu-burner-5879f48bb8-tz4tl",
+      "cpu-burner-5879f48bb8-whl77",
+      "cpu-burner-5879f48bb8-z9kgw"
+    ],
+    "previous_image": null,
+    "previous_revision": null,
+    "previous_template_digest": null,
+    "ready_replicas": 10,
+    "replicas": 10,
+    "revision": 1,
+    "server_supports_in_place_resize": true,
+    "template_digest": "313d7e4abb64ea903e83cf26898231a26183ba11cb69a1426d6715b956b84989"
+  }
+}

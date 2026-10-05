@@ -35,13 +35,39 @@ spec:
         runAsNonRoot: true
         runAsUser: 10002
         fsGroup: 10002
+      {{- if and $svc.volume $svc.volume.hostPath }}
+      # The log directory is a hostPath, so the files land on the NODE's filesystem under
+      # /var/log -- where disk pressure is measured and where the node agent cleans. The kubelet
+      # creates it root-owned; this hands it to the non-root service and does nothing else.
+      initContainers:
+        - name: own-log-dir
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: ["python", "-c", "import os; os.chown('{{ $svc.env.LOG_DIR }}', 10002, 10002)"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN"]
+          volumeMounts:
+            - name: logs
+              mountPath: {{ $svc.env.LOG_DIR }}
+      {{- end }}
       containers:
         {{- include "chaos.container" (dict "svc" $svc "root" $) | nindent 8 }}
       {{- if $svc.volume }}
       volumes:
         - name: logs
+          {{- if $svc.volume.hostPath }}
+          hostPath:
+            path: {{ $svc.volume.hostPath }}
+            type: DirectoryOrCreate
+          {{- else }}
           emptyDir:
             sizeLimit: {{ $svc.volume.sizeLimit }}
+          {{- end }}
       {{- end }}
 {{- end }}
 {{- end }}

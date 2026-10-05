@@ -1,0 +1,303 @@
+{
+  "alert_count": 2,
+  "alerts": [
+    {
+      "alertname": "KubePodCrashLooping",
+      "fingerprint": "e30939f5d8a1a2b5",
+      "id": 185,
+      "namespace": "chaos",
+      "node": "healops-worker",
+      "pod": "hands-off-api-5bfbf46c-57v4j",
+      "received_at": "2026-10-05T06:06:28.313933+00:00",
+      "role": "cause",
+      "severity": "critical",
+      "starts_at": "2026-10-05T06:04:13.996000+00:00",
+      "status": "firing"
+    },
+    {
+      "alertname": "KubePodCrashLooping",
+      "fingerprint": "c97e1503869256a2",
+      "id": 186,
+      "namespace": "chaos",
+      "node": "healops-worker",
+      "pod": "hands-off-api-5bfbf46c-jh5dr",
+      "received_at": "2026-10-05T06:06:28.313933+00:00",
+      "role": "symptom",
+      "severity": "critical",
+      "starts_at": "2026-10-05T06:04:13.996000+00:00",
+      "status": "firing"
+    }
+  ],
+  "approvals": [],
+  "cause_alertname": "KubePodCrashLooping",
+  "cause_scope": "workload",
+  "closed_at": null,
+  "correlation_reason": "new_incident",
+  "executions": [],
+  "format_version": 1,
+  "id": 46,
+  "ledger": [
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "a9715a93f4dd398fc127249e5e79ffb25fb5e186620edf6501efdf1eb8d19d12",
+      "incident_id": 46,
+      "occurred_at": "2026-10-05T06:06:28.313933+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "correlation_reason": "new_incident",
+        "created_incident": true,
+        "fingerprint": "e30939f5d8a1a2b5",
+        "role": "cause",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/hands-off-api"
+      },
+      "prev_hash": "bf403f677df6a8acf0e0ee6aee4115d1096a40bfee88b78b8b9710d09e03e365",
+      "seq": 174
+    },
+    {
+      "actor": "healops",
+      "event_type": "state_transition",
+      "execution_id": null,
+      "hash": "3c5c45a7c9303eb20960e435f5e400e6d448d8c0a70e608ebcc2a3d92aaf8cbe",
+      "incident_id": 46,
+      "occurred_at": "2026-10-05T06:06:28.313933+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "correlation_reason": "symptom_of_workload_cause",
+        "created_incident": false,
+        "fingerprint": "c97e1503869256a2",
+        "role": "symptom",
+        "stage": "ingest",
+        "target_key": "chaos/Deployment/hands-off-api"
+      },
+      "prev_hash": "a9715a93f4dd398fc127249e5e79ffb25fb5e186620edf6501efdf1eb8d19d12",
+      "seq": 175
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan_requested",
+      "execution_id": null,
+      "hash": "62268b83592502380df05b38d84456eb3005ee67f05c4b990bab60f4c1499142",
+      "incident_id": 46,
+      "occurred_at": "2026-10-05T06:06:28.516746+00:00",
+      "payload": {
+        "alertname": "KubePodCrashLooping",
+        "input": {
+          "cause_alert": {
+            "alertname": "KubePodCrashLooping",
+            "annotations": {
+              "description": "Container crashy in chaos/hands-off-api-5bfbf46c-57v4j on node healops-worker has been in CrashLoopBackOff for 2m.",
+              "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+              "summary": "Pod chaos/hands-off-api-5bfbf46c-57v4j is crash looping"
+            },
+            "container": "crashy",
+            "fingerprint": "e30939f5d8a1a2b5",
+            "labels": {
+              "alertname": "KubePodCrashLooping",
+              "container": "crashy",
+              "healops_runbook": "crashloop_rollback",
+              "namespace": "chaos",
+              "node": "healops-worker",
+              "pod": "hands-off-api-5bfbf46c-57v4j",
+              "prometheus": "monitoring/kps-prometheus",
+              "severity": "critical"
+            },
+            "namespace": "chaos",
+            "node": "healops-worker",
+            "pod": "hands-off-api-5bfbf46c-57v4j",
+            "severity": "critical",
+            "starts_at": "2026-10-05T06:04:13.996000+00:00",
+            "status": "firing"
+          },
+          "cause_scope": "workload",
+          "correlation_reason": "new_incident",
+          "expected_effect": null,
+          "expected_runbook": null,
+          "format_version": 1,
+          "incident_id": "46",
+          "label_note": null,
+          "opened_at": "2026-10-05T06:06:28.313933+00:00",
+          "symptom_alerts": [
+            {
+              "alertname": "KubePodCrashLooping",
+              "annotations": {
+                "description": "Container crashy in chaos/hands-off-api-5bfbf46c-jh5dr on node healops-worker has been in CrashLoopBackOff for 2m.",
+                "runbook_url": "https://github.com/Rajarshi1-source/Heal_Ops/blob/main/RUNBOOKS.md#crashloop_rollback",
+                "summary": "Pod chaos/hands-off-api-5bfbf46c-jh5dr is crash looping"
+              },
+              "container": "crashy",
+              "fingerprint": "c97e1503869256a2",
+              "labels": {
+                "alertname": "KubePodCrashLooping",
+                "container": "crashy",
+                "healops_runbook": "crashloop_rollback",
+                "namespace": "chaos",
+                "node": "healops-worker",
+                "pod": "hands-off-api-5bfbf46c-jh5dr",
+                "prometheus": "monitoring/kps-prometheus",
+                "severity": "critical"
+              },
+              "namespace": "chaos",
+              "node": "healops-worker",
+              "pod": "hands-off-api-5bfbf46c-jh5dr",
+              "severity": "critical",
+              "starts_at": "2026-10-05T06:04:13.996000+00:00",
+              "status": "firing"
+            }
+          ],
+          "target": {
+            "annotations": {
+              "deployment.kubernetes.io/revision": "2",
+              "healops.io/remediation": "disabled",
+              "meta.helm.sh/release-name": "chaos",
+              "meta.helm.sh/release-namespace": "chaos"
+            },
+            "autoscaler": null,
+            "containers": [
+              {
+                "cpu_limit_millis": 50,
+                "cpu_request_millis": 10,
+                "cpu_resize_policy": null,
+                "image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+                "memory_limit_mib": 64,
+                "memory_peak_mib": null,
+                "memory_request_mib": 32,
+                "memory_resize_policy": null,
+                "name": "crashy",
+                "restart_count": 16
+              }
+            ],
+            "drained_workloads": [],
+            "gitops_manager": "unmanaged",
+            "kind": "Deployment",
+            "labels": {
+              "app": "hands-off-api",
+              "app.kubernetes.io/managed-by": "Helm",
+              "app.kubernetes.io/name": "hands-off-api",
+              "app.kubernetes.io/part-of": "chaos-app",
+              "healops.io/expected-decision": "deny"
+            },
+            "name": "hands-off-api",
+            "namespace": "chaos",
+            "node": null,
+            "node_state": null,
+            "peer_nodes": [],
+            "pods": [
+              "hands-off-api-5bfbf46c-57v4j",
+              "hands-off-api-5bfbf46c-jh5dr"
+            ],
+            "previous_image": "ghcr.io/rajarshi1-source/healops-chaos:0.1.0",
+            "previous_revision": 1,
+            "previous_template_digest": "6b0c3e2079cf96bd832c709a5f6bc468b4d055f9b23715f084a5e43a3af0452b",
+            "ready_replicas": 2,
+            "replicas": 2,
+            "revision": 2,
+            "server_supports_in_place_resize": true,
+            "template_digest": "6b0c3e2079cf96bd832c709a5f6bc468b4d055f9b23715f084a5e43a3af0452b"
+          }
+        },
+        "runbook": "crashloop_rollback",
+        "target": "chaos/Deployment/hands-off-api"
+      },
+      "prev_hash": "e3034e2ab3257df4655df3b36784ec0bf1ac1824ac1497030117b52afb6a6d40",
+      "seq": 179
+    },
+    {
+      "actor": "healops",
+      "event_type": "plan",
+      "execution_id": null,
+      "hash": "fb456829323c3b0200c0f6aea5cb4773d3f3403522a8d614cca0c452c3235f7e",
+      "incident_id": 46,
+      "occurred_at": "2026-10-05T06:06:28.516746+00:00",
+      "payload": {
+        "actions": [],
+        "blast_radius": {
+          "namespaces": [],
+          "nodes": 0,
+          "pods": 0,
+          "user_facing": false
+        },
+        "blast_radius_score": 0,
+        "compensation": [],
+        "confidence": 1.0,
+        "cost_delta_inr_month": 0.0,
+        "durability": "ephemeral",
+        "expected_signal": null,
+        "gitops_managed": false,
+        "incident_id": "46",
+        "plan_id": "",
+        "planner_version": "0",
+        "refusal_reason": "the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+        "reversibility": "reversible",
+        "runbook": "crashloop_rollback",
+        "summary": "REFUSED: the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+        "target_kind": "Deployment",
+        "target_name": "hands-off-api",
+        "target_namespace": "chaos",
+        "ttl_seconds": 0
+      },
+      "prev_hash": "62268b83592502380df05b38d84456eb3005ee67f05c4b990bab60f4c1499142",
+      "seq": 180
+    }
+  ],
+  "mode": null,
+  "namespace": "chaos",
+  "opened_at": "2026-10-05T06:06:28.313933+00:00",
+  "outcome": "refused",
+  "outcome_detail": "refused",
+  "plans": [
+    {
+      "actions": [],
+      "blast_radius": {
+        "namespaces": [],
+        "nodes": 0,
+        "pods": 0,
+        "score": 0,
+        "user_facing": false
+      },
+      "compensation": [],
+      "confidence": 1.0,
+      "cost_delta_inr_month": 0.0,
+      "created_at": "2026-10-05T06:06:28.516746+00:00",
+      "durability": "ephemeral",
+      "expected_signal": {},
+      "id": "01a10aab-b8be-768d-a4b1-b6b1177e274f",
+      "planner_version": "1.0.0",
+      "policy_decision": "deny",
+      "policy_reasons": [],
+      "refusal_reason": "the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+      "reversibility": "reversible",
+      "runbook": "crashloop_rollback",
+      "summary": "REFUSED: the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+      "target_key": "chaos/Deployment/hands-off-api",
+      "ttl_seconds": 0
+    }
+  ],
+  "runbook": "crashloop_rollback",
+  "state": "escalated",
+  "summary": "REFUSED: the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+  "target_key": "chaos/Deployment/hands-off-api",
+  "trail": [
+    {
+      "detail": "new_incident",
+      "label": "2 alert(s)",
+      "stage": "correlate",
+      "state": "passed"
+    },
+    {
+      "detail": "the previous revision is the same pod template -- a rollback would land on an equally broken revision, so the cause is outside this workload's spec (a dependency, a node, or data) and needs a human",
+      "label": "refused",
+      "stage": "plan",
+      "state": "stopped"
+    },
+    {
+      "detail": "",
+      "label": "refused",
+      "stage": "outcome",
+      "state": "stopped"
+    }
+  ],
+  "verifications": []
+}

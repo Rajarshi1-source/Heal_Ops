@@ -1,4 +1,4 @@
-"""S3 / MinIO client for log archival.
+"""S3 client for log archival.
 
 One rule governs everything here: **archive-then-delete, never delete-only.** The disk-cleanup
 runbook must be able to prove the data still exists somewhere before it removes it, so
@@ -13,6 +13,7 @@ disk.
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -97,9 +98,12 @@ async def archive_file(local_path: str | Path, key: str) -> ArchivedObject:
     def _upload() -> tuple[int, int]:
         if not path.is_file():
             raise FileNotFoundError(path)
-        local = path.stat().st_size
+        stat = path.stat()
+        local = stat.st_size
         client = _client()
-        client.upload_file(str(path), settings.s3_bucket, key)
+        client.upload_file(
+            str(path), settings.s3_bucket, key, ExtraArgs={"Metadata": file_metadata(stat)}
+        )
         head = client.head_object(Bucket=settings.s3_bucket, Key=key)
         return local, int(head["ContentLength"])
 
@@ -147,9 +151,47 @@ async def restore_file(key: str, local_path: str | Path) -> bool:
     def _download() -> bool:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            _client().download_file(settings.s3_bucket, key, str(path))
-            return True
+            client = _client()
+            client.download_file(settings.s3_bucket, key, str(path))
+            metadata = client.head_object(Bucket=settings.s3_bucket, Key=key).get("Metadata", {})
         except ClientError, BotoCoreError, OSError:
             return False
+        apply_metadata(path, metadata)
+        return True
 
     return await asyncio.to_thread(_download)
+
+
+# The file's identity beyond its bytes, carried as object metadata. A log restored as a fresh,
+# root-owned file is not the file that was archived: its writer can no longer append to it, and the
+# 7-day floor would see it as new. Compensation restores all of it, or it is not compensation.
+_META_MTIME, _META_MODE, _META_UID, _META_GID = (
+    "healops-mtime",
+    "healops-mode",
+    "healops-uid",
+    "healops-gid",
+)
+
+
+def file_metadata(stat: os.stat_result) -> dict[str, str]:
+    return {
+        _META_MTIME: repr(stat.st_mtime),
+        _META_MODE: oct(stat.st_mode & 0o7777),
+        _META_UID: str(stat.st_uid),
+        _META_GID: str(stat.st_gid),
+    }
+
+
+def apply_metadata(path: Path, metadata: dict[str, str]) -> None:
+    """Put mode, owner and mtime back. mtime last: chown and chmod would otherwise not touch it,
+    but a later write would, and the order makes the intent plain."""
+    if _META_MODE in metadata:
+        os.chmod(path, int(metadata[_META_MODE], 8))
+    if _META_UID in metadata and hasattr(os, "chown"):
+        try:
+            os.chown(path, int(metadata[_META_UID]), int(metadata[_META_GID]))
+        except PermissionError:
+            log.warning("restored without its owner", path=str(path))
+    if _META_MTIME in metadata:
+        mtime = float(metadata[_META_MTIME])
+        os.utime(path, (mtime, mtime))

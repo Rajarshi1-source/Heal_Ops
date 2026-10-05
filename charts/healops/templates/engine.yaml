@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "healops.engine" . }}
+  labels:
+    {{- include "healops.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+spec:
+  replicas: {{ .Values.engine.replicas }}
+  # The webhook must stay reachable during a deploy, or Alertmanager retries pile up: never take a
+  # replica down before its replacement is ready.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: {{- include "healops.selector" "engine" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "healops.labels" . | nindent 8 }}
+        app.kubernetes.io/component: engine
+      annotations:
+        # Roll the pods when configuration changes, so a new policy file or setting is not left
+        # waiting for the next unrelated restart.
+        checksum/config: {{ include (print $.Template.BasePath "/config.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: healops-engine
+      automountServiceAccountToken: {{ .Values.rbac.create }}
+      # Drain: stop consuming, finish in-flight work, let the Lease lapse.
+      terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
+      securityContext: {{- include "healops.podSecurity" . | nindent 8 }}
+      affinity:
+        podAntiAffinity:
+          # Two replicas on one node is one failure domain wearing two hats.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {{- include "healops.selector" "engine" | nindent 20 }}
+      {{- with .Values.engine.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.engine.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: engine
+          image: "{{ .Values.engine.image.repository }}:{{ .Values.engine.image.tag }}"
+          imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef: { name: healops-engine }
+            - secretRef: { name: {{ include "healops.secret" . }} }
+          # Readiness: can this replica durably accept an alert? (PostgreSQL, Redis, the API
+          # server, Alertmanager.) Liveness depends on nothing external, so an outage elsewhere
+          # never turns into a restart storm here.
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /livez, port: http }
+            periodSeconds: 20
+            failureThreshold: 3
+          startupProbe:
+            httpGet: { path: /livez, port: http }
+            periodSeconds: 5
+            failureThreshold: 24
+          resources: {{- toYaml .Values.engine.resources | nindent 12 }}
+          securityContext: {{- include "healops.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "healops.engine" . }}
+  labels:
+    {{- include "healops.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+spec:
+  selector: {{- include "healops.selector" "engine" | nindent 4 }}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "healops.engine" . }}
+  labels: {{- include "healops.labels" . | nindent 4 }}
+spec:
+  # A node drain -- including one HealOps itself proposes elsewhere -- never takes the webhook away.
+  {{- if gt (int .Values.engine.replicas) 1 }}
+  minAvailable: 1
+  {{- else }}
+  maxUnavailable: 1
+  {{- end }}
+  # A replica that is not Ready is not serving the webhook, so protecting it protects nothing -- and
+  # under the default policy it would block the drain of the very node it died on.
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels: {{- include "healops.selector" "engine" | nindent 6 }}
+{{- if .Values.observability.serviceMonitor.enabled }}
+---
+# HealOps monitors itself: the healops_* series feed the scorecard, the breaker alerts and the
+# watchdog alert in charts/alerting-rules.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "healops.engine" . }}
+  labels:
+    {{- include "healops.labels" . | nindent 4 }}
+    {{- toYaml .Values.observability.serviceMonitor.labels | nindent 4 }}
+spec:
+  selector:
+    matchLabels: {{- include "healops.selector" "engine" | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+{{- end }}

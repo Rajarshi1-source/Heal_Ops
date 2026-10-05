@@ -8,6 +8,7 @@ that is precisely defect D1 reappearing as a state-machine bug rather than a run
 from __future__ import annotations
 
 from itertools import pairwise
+from typing import Any
 
 import pytest
 
@@ -121,3 +122,25 @@ def test_outcome_mapping_treats_escalation_as_a_first_class_outcome() -> None:
 def test_every_state_appears_in_the_transition_table() -> None:
     # A state missing from ALLOWED would raise KeyError at runtime inside can_transition.
     assert set(ALLOWED) == set(S)
+
+
+async def test_reaching_a_terminal_state_records_when_the_incident_closed(
+    db_session: Any,
+) -> None:
+    """Regression: `closed_at` existed from the first migration and nothing ever wrote it."""
+    from db.models import Incident, IncidentState
+    from tests.factories import make_incident
+
+    incident: Incident = await make_incident(db_session)
+    assert incident.closed_at is None
+    incident.state = IncidentState.REMEDIATED.value
+    await db_session.flush()
+    await db_session.refresh(incident)
+    assert incident.closed_at is not None and incident.closed_at >= incident.opened_at
+
+    # Once closed, it stays closed at that moment: a later write does not move it.
+    first = incident.closed_at
+    incident.state = IncidentState.ESCALATED.value
+    await db_session.flush()
+    await db_session.refresh(incident)
+    assert incident.closed_at == first

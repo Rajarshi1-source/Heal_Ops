@@ -191,3 +191,45 @@ def test_slack_adapter_is_skipped_when_unconfigured(
 ) -> None:
     # Must not raise when the integration module does not exist yet.
     main._install_slack_adapter()
+
+
+def test_a_read_only_engine_competes_for_no_lease(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The public tier has no Kubernetes permissions at all. Leadership only matters to a replica
+    that acts, so a read-only engine never asks for the Lease -- and never logs a forbidden loop."""
+    import asyncio
+
+    started: list[str] = []
+
+    class RecordingElector:
+        is_leader = False
+
+        async def start(self) -> None:
+            started.append("start")
+
+        async def stop(self) -> None:
+            started.append("stop")
+
+    async def nothing(*_: Any, **__: Any) -> None:
+        return None
+
+    async def up() -> bool:
+        return True
+
+    monkeypatch.setenv("HEALOPS_READ_ONLY", "true")
+    get_settings.cache_clear()
+    monkeypatch.setattr(main, "get_elector", lambda: RecordingElector())
+    monkeypatch.setattr(main.streams, "ensure_groups", nothing)
+    monkeypatch.setattr(main.connection, "ping", up)
+    monkeypatch.setattr(main.connection, "dispose", nothing)
+    monkeypatch.setattr(main.redis_client, "close", nothing)
+
+    async def run_lifespan() -> None:
+        async with main.lifespan(main.app):
+            pass
+
+    try:
+        asyncio.run(run_lifespan())
+    finally:
+        get_settings.cache_clear()
+
+    assert started == []

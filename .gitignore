@@ -37,11 +37,16 @@ charts/healops/values-secret.yaml
 *.log
 cluster-dump/
 
-# Evidence bundles are content-addressed and archived to object storage, not to git.
-# The committed corpus under corpus/ is deliberately tracked - it is the eval dataset.
+# In production, evidence bundles go to object storage, not git; bundles/ is that local scratch.
+# Two directories ARE tracked on purpose: corpus/ is the decision-eval dataset, and evidence/ holds
+# the recorded chaos-run incidents that the ledger gate, the replay golden files and the public
+# read-only demo are built from.
 bundles/
 
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# The public tier seed, dumped from a local cluster
+public-seed.sql
