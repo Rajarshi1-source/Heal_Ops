@@ -89,8 +89,13 @@ images: ## Build the engine, dashboard and chaos images and load them into kind
 	docker build -t healops-engine:0.1.0 -f engine/Dockerfile .
 	docker build -t healops-dashboard:0.1.0 dashboard
 	docker build -t ghcr.io/rajarshi1-source/healops-chaos:0.1.0 chaos-app
-	kind load docker-image healops-engine:0.1.0 healops-dashboard:0.1.0 \
-		ghcr.io/rajarshi1-source/healops-chaos:0.1.0 --name $(KIND_CLUSTER)
+	# Each image goes only to the nodes that run it: every node's copy lands on the host's one disk.
+	# The engine image is also the node agent, so it goes wherever node faults land.
+	workers=$$(kubectl get nodes -l healops.io/pool -o jsonpath='{.items[*].metadata.name}' | tr ' ' ','); \
+	platform=$$(kubectl get nodes -l healops.io/pool=platform -o jsonpath='{.items[*].metadata.name}' | tr ' ' ','); \
+	kind load docker-image healops-engine:0.1.0 ghcr.io/rajarshi1-source/healops-chaos:0.1.0 \
+		--name $(KIND_CLUSTER) --nodes "$$workers" && \
+	kind load docker-image healops-dashboard:0.1.0 --name $(KIND_CLUSTER) --nodes "$$platform"
 
 .PHONY: deploy
 deploy: ## Install alert rules, the chaos app and HealOps into the kind cluster
