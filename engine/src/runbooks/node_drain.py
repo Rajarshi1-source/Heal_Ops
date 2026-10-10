@@ -179,7 +179,19 @@ class NodeDrain(Runbook):
         before = await state_capture.capture_node(node)
         if before["unschedulable"]:
             await node_ops.set_unschedulable(node, False)
+        # Waited for even when the field was already clear: a second call (the watchdog's) can land
+        # inside the controller's lag, and must not report a node restored that still repels pods.
+        settled = await node_ops.await_schedulable(node)
         after = await state_capture.capture_node(node)
+        if not settled:
+            return ExecutionResult(
+                False,
+                f"uncordoned {node}, but its {node_ops.UNSCHEDULABLE_TAINT} taint was still there "
+                f"after {node_ops.SCHEDULABLE_TIMEOUT_SECONDS:.0f}s -- the scheduler still keeps "
+                "pods off it, so the cordon is not undone",
+                before,
+                after,
+            )
         return ExecutionResult(
             True,
             f"uncordoned {node}; the {len(plan.actions) - 1} evicted pod(s) stay where they were "

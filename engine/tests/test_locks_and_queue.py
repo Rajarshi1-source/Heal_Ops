@@ -229,6 +229,25 @@ async def test_batch_enqueue_preserves_every_job(redis_client_fixture: Any) -> N
     assert sorted(j.payload["incident_id"] for j in jobs) == [0, 1, 2, 3, 4]
 
 
+async def test_a_wiped_valkey_costs_queue_position_not_the_queue(redis_client_fixture: Any) -> None:
+    """Valkey restarts empty: the groups come back on the next read, and work flows again.
+
+    Created only at startup, they never came back -- every read failed NOGROUP and the engine
+    ingested incidents it would never act on, for as long as it stayed up.
+    """
+    await streams.ensure_groups()
+    await redis_client_fixture.flushdb()
+
+    assert await streams.claim_stale("exec", "worker-1", min_idle_ms=0) == []
+    assert await streams.read("verify", "worker-1", block_ms=100) == []
+
+    await streams.enqueue("plan", {"incident_id": 305})
+    assert [j.payload for j in await streams.read("exec", "worker-1", block_ms=100)] == [
+        {"incident_id": 305}
+    ]
+    assert len(await streams.read("verify", "worker-1", block_ms=100)) == 1
+
+
 async def test_depth_reports_zero_for_a_missing_stream(redis_client_fixture: Any) -> None:
     # Readiness and the /metrics endpoint both call this before anything has been queued.
     assert await streams.dlq_depth() == 0

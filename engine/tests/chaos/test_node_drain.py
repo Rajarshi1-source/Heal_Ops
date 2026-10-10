@@ -46,6 +46,15 @@ def _chaos_pods_on(node: str) -> list[str]:
     return sorted(p["metadata"]["name"] for p in pods if not p["metadata"].get("deletionTimestamp"))
 
 
+def _schedulable(node: str) -> bool:
+    """Uncordoned in full: the field clear AND the controller's mirrored cordon taint lifted."""
+    spec = harness.kubectl_json("get", "node", node)["spec"]
+    taints = spec.get("taints") or []
+    return not spec.get("unschedulable") and not any(
+        t["key"] == "node.kubernetes.io/unschedulable" for t in taints
+    )
+
+
 def _flaky(action: str, node: str) -> None:
     subprocess.run(  # noqa: S603
         [sys.executable, str(FLAKY_NODE), action, "--node", node, "--wait"], check=True
@@ -59,6 +68,9 @@ def victim(cluster: None) -> Iterator[str]:
     if not candidates:
         pytest.skip("no general-pool node is running chaos pods to drain")
     node = candidates[-1]
+    # A previous test's uncordon may still be inside the controller's lag; a snapshot taken then
+    # would record a cordon taint as the node's "before".
+    harness.wait_until(lambda: _schedulable(node), timeout=120, interval=2, what=f"{node} settled")
     yield node
     _flaky("restore", node)  # idempotent: starts the kubelet if stopped, and uncordons
     for name in _general_pool():

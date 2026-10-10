@@ -155,6 +155,8 @@ class Cluster:
         self.blocked = blocked or set()
         self.gone = gone or set()
         self.evicted: list[str] = []
+        # Whether the node lifecycle controller ever lifts its cordon taint after an uncordon.
+        self.controller_lifts_taint = True
 
     async def set_unschedulable(self, name: str, value: bool) -> None:
         self.unschedulable = value
@@ -168,6 +170,9 @@ class Cluster:
         self.evicted.append(key)
         return "evicted"
 
+    async def await_schedulable(self, name: str) -> bool:
+        return not self.unschedulable and self.controller_lifts_taint
+
     async def capture_node(self, name: str) -> dict[str, Any]:
         return {"name": name, "unschedulable": self.unschedulable}
 
@@ -177,6 +182,7 @@ def cluster(monkeypatch: pytest.MonkeyPatch) -> Cluster:
     fake = Cluster()
     monkeypatch.setattr(node_ops, "set_unschedulable", fake.set_unschedulable)
     monkeypatch.setattr(node_ops, "evict", fake.evict)
+    monkeypatch.setattr(node_ops, "await_schedulable", fake.await_schedulable)
     monkeypatch.setattr(state_capture, "capture_node", fake.capture_node)
     return fake
 
@@ -231,3 +237,52 @@ async def test_compensation_is_idempotent(
     monkeypatch.setattr(node_ops, "set_unschedulable", record)
     assert (await RUNBOOK.compensate(plan_for(target(ROOMY)))).ok
     assert calls == [], "already schedulable: nothing to patch"
+
+
+async def test_an_uncordon_the_controller_never_completes_is_not_a_compensation(
+    cluster: Cluster,
+) -> None:
+    """The PATCH landed, the taint did not lift: the node still repels pods, so say so."""
+    plan = plan_for(target(ROOMY))
+    await RUNBOOK.execute(plan)
+    cluster.controller_lifts_taint = False
+
+    result = await RUNBOOK.compensate(plan)
+
+    assert not result.ok
+    assert node_ops.UNSCHEDULABLE_TAINT in result.detail
+
+
+def _node(unschedulable: bool, *taint_keys: str) -> Any:
+    from types import SimpleNamespace
+
+    taints = [SimpleNamespace(key=k, value=None, effect="NoSchedule") for k in taint_keys]
+    return SimpleNamespace(spec=SimpleNamespace(unschedulable=unschedulable, taints=taints))
+
+
+async def test_schedulable_waits_for_the_controller_to_lift_its_taint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Field cleared at once; the controller's mirrored taint lingers for two reads.
+    reads = iter(
+        [
+            _node(False, node_ops.UNSCHEDULABLE_TAINT),
+            _node(False, node_ops.UNSCHEDULABLE_TAINT),
+            _node(False, "dedicated"),
+        ]
+    )
+
+    async def read(*_: Any) -> Any:
+        return next(reads)
+
+    monkeypatch.setattr(node_ops, "call", read)
+    assert await node_ops.await_schedulable("worker-3", timeout_s=5, interval_s=0)
+    assert next(reads, None) is None, "returned only once the taint was gone"
+
+
+async def test_schedulable_gives_up_at_the_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def read(*_: Any) -> Any:
+        return _node(False, node_ops.UNSCHEDULABLE_TAINT)
+
+    monkeypatch.setattr(node_ops, "call", read)
+    assert not await node_ops.await_schedulable("worker-3", timeout_s=0, interval_s=0)

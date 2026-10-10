@@ -18,10 +18,13 @@ import json
 from dataclasses import dataclass
 from typing import Any, cast
 
+import structlog
 from redis.exceptions import ResponseError
 
 from cache.redis_client import SOCKET_TIMEOUT_SECONDS, get_client
 from config import get_settings
+
+log = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +50,19 @@ async def ensure_groups() -> None:
         except ResponseError as exc:
             if "BUSYGROUP" not in str(exc):
                 raise
+
+
+async def _regroup_if_wiped(exc: ResponseError) -> None:
+    """Recreate the groups when Valkey has lost them; re-raise anything else.
+
+    Valkey is disposable by design, so a restart that comes back empty must cost queue position,
+    not the queue. Creating the groups only at startup made it cost the queue: every read failed
+    with NOGROUP for as long as the engine stayed up, and execution stopped without a word.
+    """
+    if "NOGROUP" not in str(exc):
+        raise exc
+    log.warning("consumer groups missing -- valkey was wiped; recreating them", error=str(exc))
+    await ensure_groups()
 
 
 async def enqueue(kind: str, payload: dict[str, Any]) -> str:
@@ -91,12 +107,14 @@ async def read(group: str, consumer: str, count: int = 10, block_ms: int = 2000)
     """Read new messages for this consumer group, blocking at most `MAX_BLOCK_MS`."""
     settings = get_settings()
     block_ms = min(block_ms, MAX_BLOCK_MS)
-    response = cast(
-        list[tuple[str, list[tuple[str, dict[str, str]]]]],
-        await get_client().xreadgroup(
+    try:
+        raw = await get_client().xreadgroup(
             group, consumer, {settings.stream_name: ">"}, count=count, block=block_ms
-        ),
-    )
+        )
+    except ResponseError as exc:
+        await _regroup_if_wiped(exc)
+        return []
+    response = cast(list[tuple[str, list[tuple[str, dict[str, str]]]]], raw)
     jobs: list[QueuedJob] = []
     for _stream, messages in response or []:
         jobs.extend(_parse(mid, fields, 1) for mid, fields in messages)
@@ -114,12 +132,14 @@ async def claim_stale(
     """
     settings = get_settings()
     client = get_client()
-    result = cast(
-        "tuple[str, list[tuple[str, dict[str, str]]], list[str]]",
-        await client.xautoclaim(
+    try:
+        raw = await client.xautoclaim(
             settings.stream_name, group, consumer, min_idle_time=min_idle_ms, count=count
-        ),
-    )
+        )
+    except ResponseError as exc:
+        await _regroup_if_wiped(exc)
+        return []
+    result = cast("tuple[str, list[tuple[str, dict[str, str]]], list[str]]", raw)
     messages = result[1] if len(result) > 1 else []
 
     jobs: list[QueuedJob] = []
