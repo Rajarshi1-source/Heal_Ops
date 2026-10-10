@@ -253,6 +253,15 @@ async def test_an_uncordon_the_controller_never_completes_is_not_a_compensation(
     assert node_ops.UNSCHEDULABLE_TAINT in result.detail
 
 
+def _serve_reads(monkeypatch: pytest.MonkeyPatch, read: Any) -> None:
+    """Answer node reads with `read`. `core_v1` is stubbed too: it is built as an argument before
+    `call` runs, and building it loads a kubeconfig -- there on a laptop, absent on a CI runner."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(node_ops, "call", read)
+    monkeypatch.setattr(node_ops, "core_v1", lambda: SimpleNamespace(read_node=None))
+
+
 def _node(unschedulable: bool, *taint_keys: str) -> Any:
     from types import SimpleNamespace
 
@@ -275,7 +284,7 @@ async def test_schedulable_waits_for_the_controller_to_lift_its_taint(
     async def read(*_: Any) -> Any:
         return next(reads)
 
-    monkeypatch.setattr(node_ops, "call", read)
+    _serve_reads(monkeypatch, read)
     assert await node_ops.await_schedulable("worker-3", timeout_s=5, interval_s=0)
     assert next(reads, None) is None, "returned only once the taint was gone"
 
@@ -284,5 +293,5 @@ async def test_schedulable_gives_up_at_the_deadline(monkeypatch: pytest.MonkeyPa
     async def read(*_: Any) -> Any:
         return _node(False, node_ops.UNSCHEDULABLE_TAINT)
 
-    monkeypatch.setattr(node_ops, "call", read)
+    _serve_reads(monkeypatch, read)
     assert not await node_ops.await_schedulable("worker-3", timeout_s=0, interval_s=0)
