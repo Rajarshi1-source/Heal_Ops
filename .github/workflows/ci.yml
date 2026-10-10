@@ -30,6 +30,9 @@ env:
   HELM_VERSION: "v4.2.4"
   KIND_VERSION: "v0.32.0"
   KIND_NODE_IMAGE: "kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed"
+  # kubectl matches the cluster rather than following kind-action's default, which moves with
+  # every release of the action.
+  KUBECTL_VERSION: "v1.36.4"
   KPS_CHART_VER: "88.4.0"
   REGISTRY: ghcr.io/rajarshi1-source
 
@@ -59,8 +62,8 @@ jobs:
           --health-cmd "valkey-cli ping" --health-interval 5s --health-timeout 3s
           --health-retries 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           version: ${{ env.UV_VERSION }}
           python-version: ${{ env.PYTHON_VERSION }}
@@ -90,8 +93,8 @@ jobs:
       run:
         working-directory: dashboard
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -110,8 +113,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
         with:
           version: ${{ env.HELM_VERSION }}
       - run: |
@@ -131,8 +134,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           version: ${{ env.UV_VERSION }}
           python-version: ${{ env.PYTHON_VERSION }}
@@ -141,7 +144,7 @@ jobs:
         run: uv run python -m evals.decision_eval --json decision-eval.json
       - name: Ledger verify over the committed evidence
         run: uv run python -m evals.ledger_verify
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: decision-eval
@@ -153,8 +156,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           version: ${{ env.UV_VERSION }}
           python-version: ${{ env.PYTHON_VERSION }}
@@ -181,18 +184,19 @@ jobs:
             /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
           docker image prune --all --force
           df -h /
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           version: ${{ env.UV_VERSION }}
           python-version: ${{ env.PYTHON_VERSION }}
       - run: uv sync --frozen
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: ${{ env.HELM_VERSION }}
-      - uses: helm/kind-action@v1.12.0
+      - uses: helm/kind-action@v1.15.1
         with:
           version: ${{ env.KIND_VERSION }}
+          kubectl_version: ${{ env.KUBECTL_VERSION }}
           node_image: ${{ env.KIND_NODE_IMAGE }}
           cluster_name: healops
           config: k8s/kind/cluster.yaml
@@ -216,7 +220,7 @@ jobs:
           kubectl cluster-info dump --all-namespaces --output-directory=cluster-dump
           mv disk.txt cluster-dump/ || true
           kubectl -n healops logs deploy/healops-engine --tail=2000 > cluster-dump/engine.log || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: cluster-dump
@@ -239,23 +243,23 @@ jobs:
     env:
       DEMO_KUBECONFIG: ${{ secrets.DEMO_KUBECONFIG }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       # Tagged with the commit, never `latest`: a running image always names the code it came from.
       - id: engine
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: engine/Dockerfile
           push: true
           tags: ${{ env.REGISTRY }}/healops-engine:${{ github.sha }}
       - id: dashboard
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: dashboard
           push: true
@@ -263,13 +267,13 @@ jobs:
           build-args: NEXT_PUBLIC_READ_ONLY=true
           tags: ${{ env.REGISTRY }}/healops-dashboard:${{ github.sha }}
       - id: chaos
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: chaos-app
           push: true
           tags: ${{ env.REGISTRY }}/healops-chaos:${{ github.sha }}
       - uses: sigstore/cosign-installer@v3
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           version: ${{ env.UV_VERSION }}
           python-version: ${{ env.PYTHON_VERSION }}
@@ -310,11 +314,11 @@ jobs:
           for bundle in evidence/*.json; do
             cosign sign-blob --yes --bundle "evidence-signatures/$(basename "$bundle" .json).sigstore.json" "$bundle"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: evidence-signatures
           path: evidence-signatures/
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         if: env.DEMO_KUBECONFIG != ''
         with:
           version: ${{ env.HELM_VERSION }}
